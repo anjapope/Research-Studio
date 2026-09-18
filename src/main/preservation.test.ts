@@ -86,7 +86,7 @@ describe('workspace preservation', () => {
     expect(manifest).toMatchObject({
       format: 'research-studio-workspace',
       version: 1,
-      workspace: { name: 'Preserved Study', schemaVersion: 10 }
+      workspace: { name: 'Preserved Study', schemaVersion: 11 }
     })
     expect(manifest.files).toHaveLength(4)
     expect(checkWorkspaceIntegrity(database)).toMatchObject({

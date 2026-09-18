@@ -79,6 +79,22 @@ export interface ManagedFileInventoryItem {
   sha256: string
 }
 
+export interface WorkerSourceImport {
+  workerFileId: string
+  workerJobId: string | null
+  originalName: string
+  originalPath: string
+  preservedPath: string
+  extractionPath: string | null
+  extractionStatus: 'extracted' | 'needs-ocr' | 'failed' | null
+  processedAt: string | null
+  processor: string | null
+  text: string | null
+  extractor: string | null
+  pageCount: number | null
+  warnings: string[]
+}
+
 function checksumFile(path: string): string {
   const hash = createHash('sha256')
   const buffer = Buffer.allocUnsafe(1024 * 1024)
@@ -678,7 +694,16 @@ export class WorkspaceDatabase {
       mediaType: 'application/pdf',
       byteSize: bytes.byteLength,
       sha256: createHash('sha256').update(bytes).digest('hex'),
-      importedAt: new Date().toISOString()
+      importedAt: new Date().toISOString(),
+      workerFileId: null,
+      workerJobId: null,
+      workerOriginalPath: null,
+      workerPreservedPath: null,
+      workerExtractionPath: null,
+      workerExtractionStatus: null,
+      workerProcessedAt: null,
+      workerProcessor: null,
+      extractionText: null
     }
     this.db
       .prepare(
@@ -696,6 +721,110 @@ export class WorkspaceDatabase {
         record.sha256,
         record.importedAt
       )
+    return record
+  }
+
+  findSourceByWorkerFileId(workerFileId: string): Source | null {
+    const row = this.db
+      .prepare(
+        `SELECT s.* FROM sources s
+         JOIN source_files f ON f.source_id = s.id
+         WHERE f.worker_file_id = ? LIMIT 1`
+      )
+      .get(workerFileId) as Row | undefined
+    return row ? this.hydrateSource(row) : null
+  }
+
+  attachWorkerSource(
+    sourceId: string,
+    inputPath: string,
+    imported: WorkerSourceImport
+  ): SourceFile {
+    this.getSource(sourceId)
+    const input = resolve(inputPath)
+    if (!existsSync(input) || !statSync(input).isFile()) {
+      throw new Error('The preserved worker source is unavailable.')
+    }
+    const extension = extname(imported.originalName).toLowerCase() || '.bin'
+    const id = randomUUID()
+    const target = join(this.storageRoot, 'files', `${id}${extension}`)
+    copyFileSync(input, target)
+    const bytes = readFileSync(target)
+    const record: SourceFile = {
+      id,
+      sourceId,
+      originalName: imported.originalName,
+      relativePath: normalize(relative(this.storageRoot, target)),
+      mediaType:
+        extension === '.pdf'
+          ? 'application/pdf'
+          : extension === '.md'
+            ? 'text/markdown'
+            : extension === '.txt'
+              ? 'text/plain'
+              : 'application/octet-stream',
+      byteSize: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      importedAt: new Date().toISOString(),
+      workerFileId: imported.workerFileId,
+      workerJobId: imported.workerJobId,
+      workerOriginalPath: imported.originalPath,
+      workerPreservedPath: imported.preservedPath,
+      workerExtractionPath: imported.extractionPath,
+      workerExtractionStatus: imported.extractionStatus,
+      workerProcessedAt: imported.processedAt,
+      workerProcessor: imported.processor,
+      extractionText: imported.text
+    }
+    this.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO source_files
+          (id, source_id, original_name, relative_path, media_type, byte_size, sha256, imported_at,
+           worker_file_id, worker_job_id, worker_original_path, worker_preserved_path,
+           worker_extraction_path, worker_extraction_status, worker_processed_at, worker_processor)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          record.id,
+          record.sourceId,
+          record.originalName,
+          record.relativePath,
+          record.mediaType,
+          record.byteSize,
+          record.sha256,
+          record.importedAt,
+          record.workerFileId,
+          record.workerJobId,
+          record.workerOriginalPath,
+          record.workerPreservedPath,
+          record.workerExtractionPath,
+          record.workerExtractionStatus,
+          record.workerProcessedAt,
+          record.workerProcessor
+        )
+      if (imported.text !== null) {
+        this.db
+          .prepare(
+            `INSERT INTO source_extractions
+             (source_file_id, extraction_status, text, output_path, record_path, extractor,
+              page_count, warnings_json, imported_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            record.id,
+            imported.extractionStatus ?? 'failed',
+            imported.text,
+            imported.extractionPath,
+            imported.extractionPath,
+            imported.extractor,
+            imported.pageCount,
+            JSON.stringify(imported.warnings),
+            record.importedAt,
+            record.importedAt
+          )
+      }
+    })
     return record
   }
 
@@ -2187,7 +2316,25 @@ export class WorkspaceDatabase {
         mediaType: String(file.media_type),
         byteSize: Number(file.byte_size),
         sha256: String(file.sha256),
-        importedAt: String(file.imported_at)
+        importedAt: String(file.imported_at),
+        workerFileId: file.worker_file_id ? String(file.worker_file_id) : null,
+        workerJobId: file.worker_job_id ? String(file.worker_job_id) : null,
+        workerOriginalPath: file.worker_original_path ? String(file.worker_original_path) : null,
+        workerPreservedPath: file.worker_preserved_path ? String(file.worker_preserved_path) : null,
+        workerExtractionPath: file.worker_extraction_path
+          ? String(file.worker_extraction_path)
+          : null,
+        workerExtractionStatus: file.worker_extraction_status
+          ? (String(file.worker_extraction_status) as SourceFile['workerExtractionStatus'])
+          : null,
+        workerProcessedAt: file.worker_processed_at ? String(file.worker_processed_at) : null,
+        workerProcessor: file.worker_processor ? String(file.worker_processor) : null,
+        extractionText: (() => {
+          const extraction = this.db
+            .prepare('SELECT text FROM source_extractions WHERE source_file_id = ?')
+            .get(String(file.id)) as Row | undefined
+          return extraction?.text ? String(extraction.text) : null
+        })()
       }))
     }
   }

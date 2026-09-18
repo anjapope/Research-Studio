@@ -3,7 +3,30 @@
 Mayday 3 is the background automation and file-processing worker for Research Studio. Stage C adds trustworthy document ingestion while keeping the worker independent from Electron and the renderer. It does not make autonomous AI decisions, call language models, modify the renderer UI, or delete Inbox files.
 
 ```text
-Inbox -> Scan -> Queued Job -> Worker -> Preserved Source -> Extract -> Output -> Manifest
+External file
+  |
+Shared Inbox
+  |
+Stage B scanner
+  |
+Queued job
+  |
+Stage C processor
+  |
+Preserved source + extracted representation
+  |
+Shared manifests and Outputs/Extracts
+  |
+Stage D SharedWorkerService
+  |
+Research Studio import -> Research Studio source
+```
+
+Stage B/C are processing infrastructure. Stage D is a read-only consumer of shared worker state until the user explicitly imports a completed document. The renderer never reads or writes shared JSON/files directly:
+
+```text
+Research Studio UI -> main/preload service -> shared manifests/outputs
+Mayday 3 worker   -> processing            -> shared manifests/outputs
 ```
 
 ## Shared Data Root
@@ -156,6 +179,14 @@ Use `RESEARCH_STUDIO_WORKER_DRY_RUN=true` or omit the variable to report intende
 
 For a real shared-folder smoke test, first confirm the configured root and inspect the queued descriptor. Then run `worker:process`, verify the source copy, completed descriptor, extract JSON/text, manifest state, and JSONL events. Do not run against a real shared root without setting `RESEARCH_STUDIO_DATA_ROOT` explicitly. The automated tests always use temporary directories.
 
+## Research Studio Integration
+
+When Research Studio has an open local workspace, the Sources view reads worker status and processed-document metadata through the main/preload boundary. It reports connected, not-configured, unavailable, or invalid-state without blocking normal workspace use. The user can manually refresh the worker view and choose `Import` for a completed document.
+
+Import creates an ordinary Research Studio source and managed source file. The source file retains worker file/job IDs, original and preserved paths, extraction location/status, processor, processing timestamp, and canonical extracted text. Worker manifests remain external state and are never written by the renderer. A repeated import is detected by worker file ID and returns an informative duplicate result.
+
+PDFs retain the existing Research Studio PDF reader path. Text and Markdown files open through the existing main-process file handler, while their normalized worker text is retained as source notes and structured extraction data. `needs-ocr` remains a visible status and does not make the preserved PDF unusable.
+
 ## Not Yet Implemented
 
 - Continuous filesystem watching.
@@ -168,3 +199,4 @@ For a real shared-folder smoke test, first confirm the configured root and inspe
 - AI/model calls.
 - Scheduled daemon/service execution.
 - Distributed locking or coordination.
+- Automatic import of every worker document.

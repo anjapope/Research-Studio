@@ -43,6 +43,7 @@ import AnalysisView from './components/AnalysisView'
 import PreservationView from './components/PreservationView'
 import DiscoveryView from './components/DiscoveryView'
 import TeachingView from './components/TeachingView'
+import SharedWorkerPanel from './components/SharedWorkerPanel'
 
 function messageFrom(error: unknown): string {
   if (!(error instanceof Error)) return 'Something went wrong.'
@@ -187,6 +188,18 @@ function App(): React.JSX.Element {
     try {
       const attached = await window.api.sources.attachPdf(selected.id)
       if (attached) await loadSources()
+    } catch (caught) {
+      setError(messageFrom(caught))
+    }
+  }
+
+  async function openSourceFile(file: SourceFile): Promise<void> {
+    if (file.mediaType === 'application/pdf') {
+      if (selected) setReading({ source: selected, file })
+      return
+    }
+    try {
+      await window.api.sources.openFile(file.id)
     } catch (caught) {
       setError(messageFrom(caught))
     }
@@ -465,6 +478,8 @@ function App(): React.JSX.Element {
             </label>
           </section>
 
+          <SharedWorkerPanel onError={setError} onNotice={setNotice} onImported={loadSources} />
+
           <div className="library-layout">
             <section className="source-list" aria-label="Sources">
               <div className="list-heading">
@@ -637,7 +652,7 @@ function App(): React.JSX.Element {
                         <button
                           className="file-card"
                           key={file.id}
-                          onClick={() => setReading({ source: selected, file })}
+                          onClick={() => void openSourceFile(file)}
                         >
                           <span>
                             <FileText size={19} />
