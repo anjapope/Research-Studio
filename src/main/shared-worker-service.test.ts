@@ -30,12 +30,13 @@ function temporary(prefix: string): string {
   return path
 }
 
-function emptyPdf(): Buffer {
-  const content = 'q Q'
+function simplePdf(text = ''): Buffer {
+  const content = `BT /F1 12 Tf 72 720 Td (${text.replace(/[()\\]/g, '\\$&')}) Tj ET`
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`
   ]
   let output = '%PDF-1.4\n'
@@ -115,19 +116,121 @@ describe('SharedWorkerService', () => {
       expect(document.processor).toEqual(expect.any(String))
       expect(document.extractionRecordPath).toEqual(expect.any(String))
       expect(document.preservedSourcePath).toEqual(expect.any(String))
-      // Reopen to prove both provenance and duplicate detection survive persistence.
-      service.close()
-      await service.choose('open')
-      expect(service.getSource(source.id)).toEqual(source)
+      // Search must consume structured extraction, independently of editable notes.
+      const edited = service.saveSource({
+        ...source,
+        origin: 'imported',
+        authors: source.authors.map((author) => author.displayName),
+        notes: null
+      })
+      const results = service.search('Canonical text', ['source'])
+      expect(results).toHaveLength(1)
+      expect(results[0]).toMatchObject({ type: 'source', entityId: source.id, title: 'import.md' })
+      expect(results[0].snippet).toContain('Canonical')
+      expect(JSON.stringify(results)).not.toContain(root)
+      service.rebuildSearchIndex()
+      service.rebuildSearchIndex()
+      expect(service.search('Canonical text', ['source'])).toHaveLength(1)
+      expect(service.searchIndexStatus().itemCount).toBe(1)
       expect(service.importWorkerDocument(fileId)).toMatchObject({
         imported: false,
         duplicate: true,
         source: { id: source.id, files: source.files }
       })
       expect(service.workerDocuments()[0].importedSourceId).toBe(source.id)
+      rmSync(root, { recursive: true, force: true })
+      expect(service.workerStatus().connection).toBe('unavailable')
+      // Reopen to prove both provenance and duplicate detection survive persistence.
+      service.close()
+      await service.choose('open')
+      expect(service.getSource(source.id)).toEqual(edited)
+      service.rebuildSearchIndex()
+      expect(service.search('Canonical text', ['source'])).toMatchObject([{ entityId: source.id }])
       expect(service.listSources()).toHaveLength(1)
     } finally {
       service.close()
+    }
+  })
+
+  it('keeps changed content with the same filename independently searchable', async () => {
+    const root = await completedWorkerRoot('same.txt', 'Amberquartz first edition')
+    const service = new SharedWorkerService({ [DATA_ROOT_ENV]: root })
+    const database = new WorkspaceDatabase(temporary('research-studio-editions-'))
+    try {
+      const first = service.importDocument(service.documents()[0].fileId, database).source!
+      writeFileSync(
+        join(sharedFolderPath(root, 'inbox'), 'same.txt'),
+        'Violetquartz second edition'
+      )
+      scanInbox({ sharedDataRoot: root, dryRun: false })
+      await processQueuedJobs({ sharedDataRoot: root, dryRun: false })
+      const next = service.documents().find((item) => item.fileId !== first.files[0].workerFileId)!
+      const second = service.importDocument(next.fileId, database).source!
+      for (const source of [first, second]) {
+        database.saveSource({ ...source, origin: 'imported', authors: [], notes: null })
+      }
+      expect(first.title).toBe(second.title)
+      expect(first.id).not.toBe(second.id)
+      expect(first.files[0].sha256).not.toBe(second.files[0].sha256)
+      expect(first.files[0].workerFileId).not.toBe(second.files[0].workerFileId)
+      expect(database.search('Amberquartz')).toMatchObject([{ entityId: first.id }])
+      expect(database.search('Violetquartz')).toMatchObject([{ entityId: second.id }])
+      expect(service.importDocument(next.fileId, database)).toMatchObject({ duplicate: true })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('keeps OCR-required imports metadata-only and rejects failed jobs', async () => {
+    const root = await completedWorkerRoot('scan.pdf', simplePdf())
+    const service = new SharedWorkerService({ [DATA_ROOT_ENV]: root })
+    const database = new WorkspaceDatabase(temporary('research-studio-ocr-search-'))
+    try {
+      const source = service.importDocument(service.documents()[0].fileId, database).source!
+      expect(source.files[0]).toMatchObject({
+        workerExtractionStatus: 'needs-ocr',
+        extractionText: null,
+        mediaType: 'application/pdf'
+      })
+      expect(database.search('scan', ['source'])).toMatchObject([{ entityId: source.id }])
+      expect(database.search('fabricatedbody')).toEqual([])
+      expect(database.searchIndexStatus()).toMatchObject({ itemCount: 1, pageCount: 0 })
+      writeFileSync(join(sharedFolderPath(root, 'inbox'), 'unsupported.bin'), 'Failedbody')
+      scanInbox({ sharedDataRoot: root, dryRun: false })
+      await processQueuedJobs({ sharedDataRoot: root, dryRun: false })
+      const failed = service.documents().find((item) => item.filename === 'unsupported.bin')!
+      expect(failed.jobStatus).toBe('failed')
+      expect(service.importDocument(failed.fileId, database)).toMatchObject({
+        imported: false,
+        source: null
+      })
+      expect(database.search('Failedbody')).toEqual([])
+    } finally {
+      database.close()
+    }
+  })
+
+  it('searches canonical PDF text while retaining the managed PDF reader attachment', async () => {
+    const root = await completedWorkerRoot('embedded.pdf', simplePdf('Luminous archival passage'))
+    const service = new SharedWorkerService({ [DATA_ROOT_ENV]: root })
+    const database = new WorkspaceDatabase(temporary('research-studio-pdf-search-'))
+    try {
+      const source = service.importDocument(service.documents()[0].fileId, database).source!
+      database.saveSource({ ...source, origin: 'imported', authors: [], notes: null })
+      rmSync(root, { recursive: true, force: true })
+      expect(database.search('Luminous archival', ['source'])).toMatchObject([
+        { entityId: source.id, sourceFileId: null, page: null }
+      ])
+      expect(database.getSource(source.id).files[0]).toMatchObject({
+        mediaType: 'application/pdf',
+        extractionText: expect.stringContaining('Luminous archival passage')
+      })
+      expect(Buffer.from(database.pdfData(source.files[0].id)).subarray(0, 5).toString()).toBe(
+        '%PDF-'
+      )
+      expect(database.searchIndexStatus().pageCount).toBe(0)
+    } finally {
+      database.close()
     }
   })
 
@@ -211,7 +314,7 @@ describe('SharedWorkerService', () => {
   })
 
   it('keeps needs-ocr visible and does not make it an import failure', async () => {
-    const root = await completedWorkerRoot('scan.pdf', emptyPdf())
+    const root = await completedWorkerRoot('scan.pdf', simplePdf())
     const document = new SharedWorkerService({ [DATA_ROOT_ENV]: root }).documents()[0]
     expect(document).toMatchObject({
       extractionStatus: 'needs-ocr',

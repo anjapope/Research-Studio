@@ -226,7 +226,8 @@ export class SharedWorkerService {
       processor: file.processedBy ?? null,
       warnings: file.warnings ?? [],
       jobStatus:
-        (job?.status ?? file.processingStatus === 'complete')
+        job?.status ??
+        (file.processingStatus === 'complete'
           ? 'complete'
           : file.processingStatus === 'failed'
             ? 'failed'
@@ -234,7 +235,7 @@ export class SharedWorkerService {
               ? 'working'
               : file.processingStatus === 'queued'
                 ? 'queued'
-                : null,
+                : null),
       jobError: job?.error?.message ?? null,
       importedSourceId: null
     }

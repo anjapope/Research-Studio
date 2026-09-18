@@ -356,6 +356,13 @@ export class WorkspaceDatabase {
     let count = 0
     this.transaction(() => {
       this.db.exec('DELETE FROM search_index')
+      const extractionText = this.db.prepare(
+        `SELECT se.text FROM source_extractions se
+           JOIN source_files sf ON sf.id = se.source_file_id
+           WHERE sf.source_id = ? AND se.extraction_status = 'extracted'
+             AND length(trim(se.text)) > 0
+           ORDER BY sf.id`
+      )
       for (const source of this.listSources()) {
         insert.run(
           'source',
@@ -374,7 +381,8 @@ export class WorkspaceDatabase {
             source.publisher,
             source.abstract,
             source.notes,
-            source.tags.join(' ')
+            source.tags.join(' '),
+            ...extractionText.all(source.id).map((row) => String(row.text))
           ]
             .filter(Boolean)
             .join('\n')

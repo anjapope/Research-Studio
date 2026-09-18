@@ -187,6 +187,80 @@ Import creates an ordinary Research Studio source and managed source file. The s
 
 PDFs retain the existing Research Studio PDF reader path. Text and Markdown files open through the existing main-process file handler, while their normalized worker text is retained as source notes and structured extraction data. `needs-ocr` remains a visible status and does not make the preserved PDF unusable.
 
+## Stage E: Local Discovery Search
+
+### Existing architecture and integration boundary
+
+`WorkspaceDatabase` owns the workspace-local SQLite FTS5 `search_index` and its
+`search_index_state`. Native source metadata, abstract, notes, authors and tags feed
+one `source` entry. Native PDF reader/preparation saves write extracted or OCR page
+text to `document_pages`, linked through `source_files` to `sources`; these become
+separate `pdf-page` entries. Evidence excerpts, transcript segments, synthesis memos
+and manuscript sections also feed their existing result types. Index content does
+not have a separate generated-metadata classification; source origin/provenance
+remains in the underlying records.
+
+Database triggers mark the index dirty after content changes. `search()` rebuilds
+a dirty index before querying; Discover also offers **Rebuild index**. Rebuilding
+transactionally replaces index contents, so repeated rebuilds do not accumulate
+entries. Queries use token-prefix matching, FTS5 ranking and content snippets.
+Discover searches the open workspace across projects, with optional result-type
+filters; it does not search other workspaces or the shared worker root.
+
+Stage D's `SharedWorkerService` reads the Stage C extraction JSON during explicit
+import. `attachWorkerSource()` stores its canonical normalized text in local
+`source_extractions`, keyed by the managed `source_files.id`. Stage E includes
+nonblank rows with `extraction_status = 'extracted'` in the existing source index
+entry. This no longer relies on the editable copy in source notes. Search performs
+no file extraction and does not synthesize page numbers from worker text.
+
+Results retain `type: source` and the Research Studio source UUID as `entityId`.
+The existing Discover navigation selects that source in Sources; PDF attachments
+still open through the existing reader. Worker identity is never used as an
+internal UUID. Ordinary result content contains source metadata and text, not
+worker filesystem paths, IDs or hashes.
+
+### Reconciliation, provenance and offline operation
+
+Migration 12 adds insert/update/delete dirty-state triggers on `source_extractions`
+and invalidates the existing index once. It adds no tables or columns and changes
+no source identities, source contents, worker manifests or extraction records.
+Opening a pre-Stage-E workspace applies the migration; its next Discover search
+automatically rebuilds from local stored content. No deletion, re-import or manual
+reconciliation is required. The existing **Rebuild index** action remains available.
+
+Provenance stays normalized in `source_files` and `source_extractions`: source UUID,
+worker file/job IDs, original filename, checksum, original/preserved/extraction
+paths, extraction status, processor/extractor version, processing and import
+timestamps. Indexing does not rewrite these values or duplicate them into index
+rows. Different checksum-aware worker identities remain independent sources even
+when their filenames match.
+
+After import, both search and index rebuild operate entirely on the local database.
+The managed source attachment also remains local. Mayday 3 and OneDrive can be
+unavailable without preventing discovery of previously imported text. The renderer
+continues to use the main/preload service boundary.
+
+`needs-ocr`, failed and blank extraction rows contribute no extraction body to the
+index. Source metadata/notes remain searchable under the existing rules. Stage E
+does not perform OCR. Failed jobs are rejected by the completed-job import gate;
+the integration now preserves the actual job status when presenting documents.
+
+### Manual smoke test
+
+Run the updated application and open the existing local workspace. In **Discover**,
+search a distinctive phrase from the already imported `mayday1-test.txt.txt`, using
+all result types or **Sources**. The first search automatically reconciles the
+index. Open the result and verify it selects the existing source and retains its
+worker provenance. No re-import or **Rebuild index** click is required. Worker PDF
+body matches appear under **Sources**, not synthetic **PDF pages** results.
+
+Automated tests use temporary roots and workspaces, including a schema-11 upgrade,
+offline rebuild, duplicate filenames, failed/OCR-required documents and an embedded
+text PDF. They do not inspect or modify the real smoke-test document. If its text
+has no useful distinctive phrase, use a richer separately imported document for a
+subsequent test without replacing the existing source.
+
 ## Not Yet Implemented
 
 - Continuous filesystem watching.

@@ -834,7 +834,7 @@ describe('WorkspaceDatabase', () => {
           }
         ).schema_version
       )
-    ).toBe(11)
+    ).toBe(12)
     migrated.close()
   })
 })

@@ -412,5 +412,18 @@ export const migrations: Migration[] = [
         updated_at TEXT NOT NULL
       );
       UPDATE workspace SET schema_version = 11;`
+  },
+  {
+    version: 12,
+    name: 'source-extraction-search',
+    sql: `
+      CREATE TRIGGER search_dirty_extractions_insert AFTER INSERT ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      CREATE TRIGGER search_dirty_extractions_update AFTER UPDATE ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      CREATE TRIGGER search_dirty_extractions_delete AFTER DELETE ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      UPDATE search_index_state SET dirty = 1 WHERE id = 1;
+      UPDATE workspace SET schema_version = 12;`
   }
 ]
