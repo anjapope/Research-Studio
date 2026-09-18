@@ -78,6 +78,7 @@ import { synthesizeLesson } from './teaching-ai'
 import { TeachingSettings } from './teaching-settings'
 import { teachingPowerPoint } from './teaching-powerpoint'
 import { SharedWorkerService } from './shared-worker-service'
+import { fileMetadataSchema } from './automation-manifest'
 
 const lessonSchema = z.object({
   id: z.string().uuid(),
@@ -256,7 +257,11 @@ export class WorkspaceService {
   }
 
   importWorkerDocument(fileId: string): SharedWorkerImportResult {
-    return this.sharedWorker.importDocument(idSchema.parse(fileId), this.requireDatabase())
+    // Worker IDs are manifest identities; source UUIDs are assigned during source creation.
+    return this.sharedWorker.importDocument(
+      fileMetadataSchema.shape.id.parse(fileId),
+      this.requireDatabase()
+    )
   }
 
   removeSource(id: string): void {

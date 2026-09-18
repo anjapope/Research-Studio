@@ -1,13 +1,26 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DATA_ROOT_ENV } from './automation-config'
 import { manifestPath, sharedFolderPath } from './automation-fs'
 import { processQueuedJobs } from './automation-processor'
 import { scanInbox } from './automation-worker'
 import { WorkspaceDatabase } from './database'
 import { SharedWorkerService } from './shared-worker-service'
+import { WorkspaceService } from './workspace-service'
+import { idSchema } from './validation'
+import { filesManifestSchema } from './automation-manifest'
+
+const electronState = vi.hoisted(() => ({ userData: '', workspace: '' }))
+vi.mock('electron', () => ({
+  app: { getPath: () => electronState.userData },
+  dialog: {
+    showOpenDialog: async () => ({ canceled: false, filePaths: [electronState.workspace] })
+  },
+  shell: {},
+  safeStorage: {}
+}))
 
 const paths: string[] = []
 
@@ -54,10 +67,70 @@ async function completedWorkerRoot(
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
 describe('SharedWorkerService', () => {
+  it('imports a deterministic worker ID through WorkspaceService with separate source identity', async () => {
+    const text = '# Imported\n\nCanonical text'
+    const root = await completedWorkerRoot('import.md', text)
+    vi.stubEnv(DATA_ROOT_ENV, root)
+    electronState.userData = temporary('research-studio-preferences-')
+    electronState.workspace = temporary('research-studio-workspace-')
+    const service = new WorkspaceService()
+    try {
+      await service.choose('create')
+      const document = service.workerDocuments()[0]
+      const fileId = document.fileId
+      // Use the actual Stage B/C-generated identity, not a UUID fixture.
+      expect(fileId).toMatch(/^file-[a-f0-9]{64}$/)
+      expect(idSchema.safeParse(fileId).success).toBe(false)
+      const metadata = filesManifestSchema.parse(
+        JSON.parse(readFileSync(manifestPath(root, 'files.json'), 'utf8'))
+      ).files[0]
+
+      const imported = service.importWorkerDocument(fileId)
+      expect(imported).toMatchObject({ imported: true, duplicate: false })
+      const source = imported.source!
+      expect(idSchema.parse(source.id)).toBe(source.id)
+      expect(source.id).not.toBe(fileId)
+      expect(source.notes).toBe(text)
+      expect(source.files).toHaveLength(1)
+      expect(source.files[0]).toMatchObject({
+        sourceId: source.id,
+        sha256: metadata.sha256,
+        workerFileId: fileId,
+        workerJobId: document.jobId,
+        workerOriginalPath: document.sourcePath,
+        workerPreservedPath: document.preservedSourcePath,
+        workerExtractionPath: document.extractionRecordPath,
+        workerExtractionStatus: 'extracted',
+        workerProcessedAt: document.processedAt,
+        workerProcessor: document.processor,
+        extractionText: text
+      })
+      expect(document.jobId).toEqual(expect.any(String))
+      expect(document.processedAt).toEqual(expect.any(String))
+      expect(document.processor).toEqual(expect.any(String))
+      expect(document.extractionRecordPath).toEqual(expect.any(String))
+      expect(document.preservedSourcePath).toEqual(expect.any(String))
+      // Reopen to prove both provenance and duplicate detection survive persistence.
+      service.close()
+      await service.choose('open')
+      expect(service.getSource(source.id)).toEqual(source)
+      expect(service.importWorkerDocument(fileId)).toMatchObject({
+        imported: false,
+        duplicate: true,
+        source: { id: source.id, files: source.files }
+      })
+      expect(service.workerDocuments()[0].importedSourceId).toBe(source.id)
+      expect(service.listSources()).toHaveLength(1)
+    } finally {
+      service.close()
+    }
+  })
+
   it('reports not-configured and unavailable without blocking the app', () => {
     expect(new SharedWorkerService({}).status()).toMatchObject({
       connection: 'not-configured',
