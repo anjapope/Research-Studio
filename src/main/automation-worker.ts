@@ -68,7 +68,7 @@ function fileMetadata(path: string, now: Date): FileMetadata {
   const stats = statSync(path)
   const checksum = sha256File(path)
   return {
-    id: stableId('file', path),
+    id: stableId('file', `${path}\0${checksum}`),
     filename: basename(path),
     extension: extname(path).replace(/^\./, '').toLowerCase(),
     byteSize: stats.size,
@@ -90,6 +90,7 @@ function ingestionJob(file: FileMetadata, now: Date): JobRecord {
     jobType: 'ingest-inbox-file',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
+    queuedAt: now.toISOString(),
     status: 'queued',
     outputLocation: null,
     error: null
