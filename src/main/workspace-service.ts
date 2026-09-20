@@ -1,7 +1,7 @@
-import { app, dialog, shell } from 'electron'
+import { dialog, shell } from 'electron'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { basename, extname, join, resolve } from 'path'
+import { readFileSync, statSync, writeFileSync } from 'fs'
+import { basename, extname, resolve } from 'path'
 import type {
   AnalysisQuery,
   AnalysisResult,
@@ -48,7 +48,6 @@ import {
 } from './preservation'
 import {
   analysisQuerySchema,
-  discoverySearchSchema,
   documentPageTextSchema,
   evidenceExcerptDraftSchema,
   idSchema,
@@ -68,160 +67,51 @@ import {
 } from './validation'
 import { recognizeEnglish } from './ocr-service'
 import { extractManuscript } from './manuscript-import'
-import { randomUUID } from 'crypto'
-import { z } from 'zod'
-import { slidesHtml, type Lesson, type TeachingSource } from '../shared/teaching'
-import { synthesizeLesson } from './teaching-ai'
-import { TeachingSettings } from './teaching-settings'
-import { teachingPowerPoint } from './teaching-powerpoint'
-
-const lessonSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().trim().min(1).max(500),
-  audience: z.string().max(2000),
-  duration: z.number().int().min(5).max(480),
-  objectives: z.string().max(20000),
-  sources: z
-    .array(
-      z.object({
-        id: z.string().max(200),
-        title: z.string().max(2000),
-        text: z.string().max(5_000_000)
-      })
-    )
-    .max(100),
-  synthesis: z.string().max(5_000_000),
-  notes: z.string().max(5_000_000),
-  slides: z.string().max(5_000_000),
-  generation: z
-    .object({
-      provider: z.literal('openai'),
-      model: z.string().max(150),
-      generatedAt: z.string().datetime(),
-      sourceDigest: z.string().regex(/^[a-f0-9]{64}$/)
-    })
-    .optional()
-})
+import type { Lesson, TeachingSource } from '../shared/teaching'
+import { DiscoveryService } from './discovery-service'
+import { TeachingService } from './teaching-service'
+import { WorkspaceLifecycle } from './workspace-lifecycle'
 
 export class WorkspaceService {
-  readonly teachingSettings = new TeachingSettings()
-  private teachingRequest: AbortController | null = null
+  private readonly lifecycle = new WorkspaceLifecycle()
+  private readonly teaching = new TeachingService(() => this.requireDatabase())
+  private readonly discovery = new DiscoveryService(() => this.requireDatabase())
+  readonly teachingSettings = this.teaching.teachingSettings
 
   cancelTeachingSynthesis(): void {
-    this.teachingRequest?.abort()
+    this.teaching.cancelTeachingSynthesis()
   }
 
   async synthesizeTeachingLesson(input: unknown): Promise<Lesson> {
-    const database = this.requireDatabase()
-    const lesson = lessonSchema.parse(input)
-    if (this.teachingRequest) throw new Error('A teaching synthesis is already running.')
-    const { model, apiKey } = this.teachingSettings.credentials()
-    const controller = new AbortController()
-    this.teachingRequest = controller
-    const timer = setTimeout(() => controller.abort(), 180_000)
-    try {
-      const result = await synthesizeLesson(lesson, apiKey, model, controller.signal)
-      if (controller.signal.aborted || database !== this.requireDatabase())
-        throw new Error(
-          'Synthesis was canceled or the workspace changed. Your drafts are unchanged.'
-        )
-      return result
-    } finally {
-      clearTimeout(timer)
-      this.teachingRequest = null
-    }
+    return this.teaching.synthesizeTeachingLesson(input)
   }
   listLessons(): Lesson[] {
-    return this.requireDatabase().listLessons()
+    return this.teaching.listLessons()
   }
 
   saveLesson(input: unknown): Lesson {
-    return this.requireDatabase().saveLesson(lessonSchema.parse(input))
+    return this.teaching.saveLesson(input)
   }
 
   async importTeachingDocuments(): Promise<TeachingSource[]> {
-    const database = this.requireDatabase()
-    const result = await dialog.showOpenDialog({
-      title: 'Add class readings',
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Readings', extensions: ['pdf', 'docx', 'md', 'txt'] }]
-    })
-    if (result.canceled) return []
-    const sources: TeachingSource[] = []
-    for (const path of result.filePaths) {
-      if (statSync(path).size > 50 * 1024 * 1024)
-        throw new Error(`${basename(path)} exceeds the 50 MB import limit.`)
-      const parsed = await extractManuscript(path)
-      const text = parsed.sections
-        .map((section) => `${section.title}\n${section.content}`)
-        .join('\n\n')
-      if (!text.trim())
-        throw new Error(`${basename(path)} has no readable text. Run OCR or paste a transcription.`)
-      sources.push({ id: randomUUID(), title: basename(path), text })
-    }
-    if (database !== this.requireDatabase())
-      throw new Error('Workspace changed during import. Please import again.')
-    return sources
+    return this.teaching.importTeachingDocuments()
   }
 
   async exportLesson(input: unknown, format: unknown): Promise<boolean> {
-    this.requireDatabase()
-    const lesson = lessonSchema.parse(input)
-    const kind = z.enum(['notes', 'slides', 'synthesis', 'pptx']).parse(format)
-    if (!(kind === 'pptx' ? lesson.slides : lesson[kind]).trim())
-      throw new Error('Add teaching material before exporting.')
-    const extension = kind === 'pptx' ? 'pptx' : kind === 'slides' ? 'html' : 'md'
-    const result = await dialog.showSaveDialog({
-      title: 'Export teaching material',
-      defaultPath: `${lesson.title.replace(/[<>:"/\\|?*]/g, '-')}-${kind}.${extension}`,
-      filters: [
-        {
-          name:
-            kind === 'pptx'
-              ? 'PowerPoint presentation'
-              : kind === 'slides'
-                ? 'Browser slide deck'
-                : 'Markdown',
-          extensions: [extension]
-        }
-      ]
-    })
-    if (result.canceled || !result.filePath) return false
-    if (kind === 'pptx') writeFileSync(result.filePath, await teachingPowerPoint(lesson))
-    else
-      writeFileSync(result.filePath, kind === 'slides' ? slidesHtml(lesson) : lesson[kind], 'utf8')
-    return true
+    return this.teaching.exportLesson(input, format)
   }
 
-  private database: WorkspaceDatabase | null = null
-  private readonly preferencesPath = join(app.getPath('userData'), 'preferences.json')
-
   async choose(mode: 'create' | 'open'): Promise<WorkspaceInfo | null> {
-    const result = await dialog.showOpenDialog({
-      title:
-        mode === 'create'
-          ? 'Choose a folder for the new workspace'
-          : 'Open a Research Studio workspace',
-      properties: ['openDirectory', mode === 'create' ? 'createDirectory' : 'dontAddToRecent']
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    return this.open(result.filePaths[0])
+    return this.lifecycle.choose(mode)
   }
 
   recent(): WorkspaceInfo | null {
-    if (!existsSync(this.preferencesPath)) return null
-    const parsed = JSON.parse(readFileSync(this.preferencesPath, 'utf8')) as {
-      recentWorkspace?: unknown
-    }
-    if (typeof parsed.recentWorkspace !== 'string' || !existsSync(parsed.recentWorkspace))
-      return null
-    return this.open(parsed.recentWorkspace)
+    return this.lifecycle.recent()
   }
 
   close(): void {
     this.cancelTeachingSynthesis()
-    this.database?.close()
-    this.database = null
+    this.lifecycle.close()
   }
 
   listSources(query?: SourceQuery): Source[] {
@@ -766,7 +656,7 @@ export class WorkspaceService {
     if (destinationResult.canceled || !destinationResult.filePaths[0]) return null
     const destination = destinationResult.filePaths[0]
     restoreWorkspacePackage(packageResult.filePaths[0], destination)
-    return this.open(destination)
+    return this.lifecycle.open(destination)
   }
 
   async exportQualitative(format: QualitativeExportFormat): Promise<number | null> {
@@ -804,16 +694,15 @@ export class WorkspaceService {
   }
 
   search(query: string, types?: SearchResultType[]): SearchResult[] {
-    const parsed = discoverySearchSchema.parse({ query, types })
-    return this.requireDatabase().search(parsed.query, parsed.types)
+    return this.discovery.search(query, types)
   }
 
   searchIndexStatus(): SearchIndexStatus {
-    return this.requireDatabase().searchIndexStatus()
+    return this.discovery.searchIndexStatus()
   }
 
   rebuildSearchIndex(): SearchIndexStatus {
-    return this.requireDatabase().rebuildSearchIndex()
+    return this.discovery.rebuildSearchIndex()
   }
 
   async importLibrary(): Promise<ImportSummary | null> {
@@ -875,21 +764,8 @@ export class WorkspaceService {
     return sources.length
   }
 
-  private open(path: string): WorkspaceInfo {
-    this.close()
-    const normalized = resolve(path)
-    this.database = new WorkspaceDatabase(normalized)
-    writeFileSync(
-      this.preferencesPath,
-      JSON.stringify({ recentWorkspace: normalized }, null, 2),
-      'utf8'
-    )
-    return this.database.info()
-  }
-
   private requireDatabase(): WorkspaceDatabase {
-    if (!this.database) throw new Error('Open a workspace before managing sources.')
-    return this.database
+    return this.lifecycle.requireDatabase()
   }
 
   private citationIdentity(title: string, year: number | null, doi: string | null): string {
