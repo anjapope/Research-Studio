@@ -1,0 +1,9 @@
+{
+  "sharedDataRoot": "/path/to/Research Studio",
+  "enabled": false,
+  "intervalMinutes": 15,
+  "maxJobsPerRun": 5,
+  "staleLockMinutes": 120,
+  "logRetentionDays": 30,
+  "label": "studio.research.worker"
+}

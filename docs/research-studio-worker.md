@@ -179,6 +179,43 @@ Use `RESEARCH_STUDIO_WORKER_DRY_RUN=true` or omit the variable to report intende
 
 For a real shared-folder smoke test, first confirm the configured root and inspect the queued descriptor. Then run `worker:process`, verify the source copy, completed descriptor, extract JSON/text, manifest state, and JSONL events. Do not run against a real shared root without setting `RESEARCH_STUDIO_DATA_ROOT` explicitly. The automated tests always use temporary directories.
 
+## Controlled macOS Scheduling
+
+Scheduling is opt-in and separate from the application. It runs a short, one-shot sequence of `scan -> bounded process` from an explicit scheduler JSON configuration. It never depends on an interactive shell, does not change power settings, and has no access to the Electron renderer or workspace database.
+
+Start by creating a local configuration outside Git from [research-studio-worker-scheduler.example.json](research-studio-worker-scheduler.example.json). Keep `enabled` set to `false` until the shared root and limits have been reviewed:
+
+```json
+{
+  "sharedDataRoot": "/absolute/path/to/Research Studio",
+  "enabled": false,
+  "intervalMinutes": 15,
+  "maxJobsPerRun": 5,
+  "staleLockMinutes": 120,
+  "logRetentionDays": 30,
+  "label": "studio.research.worker"
+}
+```
+
+Operational commands always require the explicit config path:
+
+```sh
+npm run worker:schedule:status -- --config /absolute/path/to/scheduler.json
+npm run worker:schedule:run -- --config /absolute/path/to/scheduler.json
+npm run worker:schedule:install -- --config /absolute/path/to/scheduler.json
+npm run worker:schedule:start -- --config /absolute/path/to/scheduler.json
+npm run worker:schedule:stop -- --config /absolute/path/to/scheduler.json
+npm run worker:schedule:uninstall -- --config /absolute/path/to/scheduler.json
+```
+
+`install` writes a per-user plist at `~/Library/LaunchAgents/<label>.plist` but does not load it. `start` bootstraps the LaunchAgent and triggers one run. `stop` unloads it but leaves the plist available for a later explicit start. `uninstall` unloads and removes the plist. No command requires administrator access.
+
+The agent is a macOS `LaunchAgent`: it starts only after that user logs in and stops when the user logs out. `StartInterval` schedules the next run while the Mac is awake; it does not wake the machine from sleep and missed intervals are not replayed as a backlog. Restarting the computer requires logging in before the agent can run again.
+
+Every enabled run acquires `System/config/worker-scheduler.lock` before scanning. A live lock skips the run, preventing overlap. A lock is removed only when it is older than `staleLockMinutes` and its recorded process is no longer running, which supports recovery after interruption without resetting `working` jobs. The scheduler processes only `maxJobsPerRun` queued jobs and never changes `working` jobs. Existing processor lifecycle and duplicate protections remain authoritative.
+
+Scheduler events are timestamped JSON Lines under `System/logs/scheduler-YYYY-MM-DD.jsonl`; only these scheduler logs are pruned after `logRetentionDays`. If the data root is unavailable, disabled, or an Inbox file changes before processing, the scheduler leaves original research files untouched and returns a clear result. No automatic retry or reset of in-progress jobs occurs.
+
 ## Research Studio Integration
 
 When Research Studio has an open local workspace, the Sources view reads worker status and processed-document metadata through the main/preload boundary. It reports connected, not-configured, unavailable, or invalid-state without blocking normal workspace use. The user can manually refresh the worker view and choose `Import` for a completed document.

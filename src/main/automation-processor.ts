@@ -313,7 +313,8 @@ async function processJob(
 
 export async function processQueuedJobs(
   config: WorkerConfig,
-  now = new Date()
+  now = new Date(),
+  options: { maxJobs?: number } = {}
 ): Promise<ProcessQueuedResult> {
   const queuedPaths = listProcessingJobPaths(config.sharedDataRoot, 'queued')
   const filesManifest = readFilesManifest(manifestPath(config.sharedDataRoot, 'files.json'), now)
@@ -321,7 +322,8 @@ export async function processQueuedJobs(
   const actions: ProcessingAction[] = []
   let completedJobs = 0
   let failedJobs = 0
-  for (const queuedPath of queuedPaths) {
+  const selectedPaths = queuedPaths.slice(0, options.maxJobs ?? queuedPaths.length)
+  for (const queuedPath of selectedPaths) {
     try {
       const result = await processJob(
         config.sharedDataRoot,
@@ -346,7 +348,7 @@ export async function processQueuedJobs(
   }
   return {
     dryRun: config.dryRun,
-    consideredJobs: queuedPaths.length,
+    consideredJobs: selectedPaths.length,
     completedJobs,
     failedJobs,
     actions
