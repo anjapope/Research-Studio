@@ -55,7 +55,14 @@ function titleCase(value: string): string {
 }
 
 type ActiveView =
-  'sources' | 'projects' | 'interviews' | 'analysis' | 'discovery' | 'preservation' | 'teaching'
+  | 'sources'
+  | 'library'
+  | 'projects'
+  | 'interviews'
+  | 'analysis'
+  | 'discovery'
+  | 'preservation'
+  | 'teaching'
 
 function App(): React.JSX.Element {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
@@ -124,7 +131,7 @@ function App(): React.JSX.Element {
       const source = await window.api.sources.get(sourceId)
       setSources((current) => [source, ...current.filter((item) => item.id !== source.id)])
       setQuery({ sourceType: 'all', status: 'all' })
-      if (!(await navigate('sources'))) return
+      if (!(await navigate('library'))) return
       setSelectedId(source.id)
     } catch (caught) {
       setError(messageFrom(caught))
@@ -352,6 +359,12 @@ function App(): React.JSX.Element {
             className={`nav-item ${activeView === 'sources' ? 'active' : ''}`}
             onClick={() => void navigate('sources')}
           >
+            <FileText size={18} /> Sources
+          </button>
+          <button
+            className={`nav-item ${activeView === 'library' ? 'active' : ''}`}
+            onClick={() => void navigate('library')}
+          >
             <Library size={18} /> Library <span>{sources.length}</span>
           </button>
           <button
@@ -401,28 +414,30 @@ function App(): React.JSX.Element {
         </div>
       </aside>
 
-      {activeView === 'sources' ? (
+      {activeView === 'sources' || activeView === 'library' ? (
         <main className="main-content">
           <header className="topbar">
             <div>
-              <p className="eyebrow">Library</p>
-              <h1>Sources</h1>
+              <p className="eyebrow">{activeView === 'sources' ? 'Source management' : 'Corpus'}</p>
+              <h1>{activeView === 'sources' ? 'Sources' : 'Library'}</h1>
             </div>
-            <div className="topbar-actions">
-              <button className="button secondary" onClick={importLibrary}>
-                <Upload size={16} /> Import
-              </button>
-              <div className="export-actions">
-                <span>
-                  <Download size={15} /> Export
-                </span>
-                <button onClick={() => exportLibrary('csl-json')}>CSL JSON</button>
-                <button onClick={() => exportLibrary('bibtex')}>BibTeX</button>
+            {activeView === 'sources' && (
+              <div className="topbar-actions">
+                <button className="button secondary" onClick={importLibrary}>
+                  <Upload size={16} /> Import
+                </button>
+                <div className="export-actions">
+                  <span>
+                    <Download size={15} /> Export
+                  </span>
+                  <button onClick={() => exportLibrary('csl-json')}>CSL JSON</button>
+                  <button onClick={() => exportLibrary('bibtex')}>BibTeX</button>
+                </div>
+                <button className="button primary" onClick={() => setEditing('new')}>
+                  <Plus size={17} /> Add source
+                </button>
               </div>
-              <button className="button primary" onClick={() => setEditing('new')}>
-                <Plus size={17} /> Add source
-              </button>
-            </div>
+            )}
           </header>
 
           {error && (
@@ -490,12 +505,14 @@ function App(): React.JSX.Element {
             </label>
           </section>
 
-          <SharedWorkerPanel
-            onError={setError}
-            onNotice={setNotice}
-            onImported={loadSources}
-            onOpenLibrarySource={openLibrarySource}
-          />
+          {activeView === 'sources' && (
+            <SharedWorkerPanel
+              onError={setError}
+              onNotice={setNotice}
+              onImported={loadSources}
+              onOpenLibrarySource={openLibrarySource}
+            />
+          )}
 
           <div className="library-layout">
             <section className="source-list" aria-label="Sources">
@@ -520,7 +537,7 @@ function App(): React.JSX.Element {
                       ? 'Try a broader search or clear a filter.'
                       : 'Add a book, article, report, or other work you want to keep close.'}
                   </p>
-                  {!query.search && (
+                  {!query.search && activeView === 'sources' && (
                     <button className="button primary" onClick={() => setEditing('new')}>
                       <Plus size={17} /> Add first source
                     </button>
