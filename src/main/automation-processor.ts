@@ -4,10 +4,13 @@ import { basename, extname } from 'path'
 import type { WorkerConfig } from './automation-config'
 import {
   extractOutputPath,
+  existingSharedManifestPath,
   listProcessingJobPaths,
   manifestPath,
   preservedSourcePath,
   processingJobPath,
+  resolveSharedManifestPath,
+  sharedPathReference,
   workerLogPath,
   writeTextAtomic
 } from './automation-fs'
@@ -72,7 +75,8 @@ function safeCopySource(root: string, file: FileMetadata): string {
 
 function preserveSource(root: string, file: FileMetadata): string {
   const destination = safeCopySource(root, file)
-  if (!existsSync(destination)) copyFileSync(file.sourcePath, destination)
+  const sourcePath = existingSharedManifestPath(root, file.sourcePath).path
+  if (!existsSync(destination)) copyFileSync(sourcePath, destination)
   else if (sha256File(destination) !== file.sha256) {
     throw new Error('Preserved source collision could not be resolved safely.')
   }
@@ -166,13 +170,17 @@ async function processJob(
 
   let preservedPath: string | null = null
   try {
-    if (sha256File(file.sourcePath) !== file.sha256) {
+    const sourcePath = existingSharedManifestPath(root, file.sourcePath).path
+    if (sha256File(sourcePath) !== file.sha256) {
       throw new Error('The Inbox source changed after scanning; scan it again before processing.')
     }
+    const existingPreservedPath = file.preservedSourcePath
+      ? resolveSharedManifestPath(root, file.preservedSourcePath).path
+      : null
     const preserved = config.dryRun
       ? safeCopySource(root, file)
-      : file.preservedSourcePath && existsSync(file.preservedSourcePath)
-        ? file.preservedSourcePath
+      : existingPreservedPath && existsSync(existingPreservedPath)
+        ? existingPreservedPath
         : preserveSource(root, file)
     preservedPath = preserved
     actions.push({
@@ -183,7 +191,7 @@ async function processJob(
       reason: 'Preserved original source without modifying Inbox.'
     })
     if (!config.dryRun) {
-      updateFile(files, file, { preservedSourcePath: preserved })
+      updateFile(files, file, { preservedSourcePath: sharedPathReference(root, preserved) })
       persistManifests(root, files, jobs)
       logEvent(root, now, 'source-preserved', job, { preservedSourcePath: preserved })
     }
@@ -195,10 +203,7 @@ async function processJob(
       reason: `Extracting .${file.extension} source.`
     })
     if (!config.dryRun) logEvent(root, now, 'extraction-started', job)
-    const extraction = await extractDocument(
-      config.dryRun ? file.sourcePath : preserved,
-      file.extension
-    )
+    const extraction = await extractDocument(config.dryRun ? sourcePath : preserved, file.extension)
     const outputJson = extractOutputPath(root, file.id, 'json')
     const outputText = extractOutputPath(root, file.id, 'txt')
     const processedAt = now.toISOString()
@@ -208,8 +213,9 @@ async function processJob(
       fileId: file.id,
       jobId: job.id,
       originalFilename: file.filename,
-      originalSourcePath: file.sourcePath,
-      preservedSourcePath: preserved,
+      originalSourcePath: file.producerSourcePath ?? file.sourcePath,
+      sourcePath: file.sourcePath,
+      preservedSourcePath: sharedPathReference(root, preserved),
       sha256: file.sha256,
       mimeType:
         file.extension === 'pdf'
@@ -217,7 +223,7 @@ async function processJob(
           : file.extension === 'md'
             ? 'text/markdown'
             : 'text/plain',
-      byteSize: statSync(file.sourcePath).size,
+      byteSize: statSync(sourcePath).size,
       ingestedAt: file.discoveredAt,
       processedAt,
       extractionStatus: extraction.extractionStatus,
@@ -226,8 +232,8 @@ async function processJob(
       characterCount: extraction.text.length,
       wordCount: wordCount(extraction.text),
       normalizedText: extraction.text,
-      outputLocation: outputJson,
-      textOutputLocation: outputText,
+      outputLocation: sharedPathReference(root, outputJson),
+      textOutputLocation: sharedPathReference(root, outputText),
       warnings: extraction.warnings,
       errors: []
     }
@@ -248,11 +254,11 @@ async function processJob(
       writeTextAtomic(outputJson, `${JSON.stringify(metadata, null, 2)}\n`)
       writeTextAtomic(outputText, extraction.text)
       const updatedFile = updateFile(files, file, {
-        preservedSourcePath: preserved,
+        preservedSourcePath: sharedPathReference(root, preserved),
         processingStatus: 'complete',
         extractionStatus: extraction.extractionStatus,
-        extractedTextPath: outputText,
-        extractionRecordPath: outputJson,
+        extractedTextPath: sharedPathReference(root, outputText),
+        extractionRecordPath: sharedPathReference(root, outputJson),
         processedAt,
         processedBy: PROCESSOR_ID,
         processingJobId: job.id,
@@ -261,7 +267,7 @@ async function processJob(
       Object.assign(file, updatedFile)
       transitionJob(jobs, job.id, 'complete', {
         now,
-        outputLocation: outputJson,
+        outputLocation: sharedPathReference(root, outputJson),
         processor: PROCESSOR_ID,
         warnings: extraction.warnings
       })
@@ -288,7 +294,7 @@ async function processJob(
     if (!config.dryRun) {
       updateFile(files, file, {
         processingStatus: 'failed',
-        preservedSourcePath: preservedPath,
+        preservedSourcePath: preservedPath ? sharedPathReference(root, preservedPath) : null,
         extractionStatus: safeMessage.startsWith('unsupported-file-type')
           ? 'unsupported-file-type'
           : 'failed',

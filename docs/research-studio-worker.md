@@ -90,8 +90,10 @@ During dry runs, the scanner returns the actions it would take without creating 
 
 Manifests are JSON files under `System/manifests/`:
 
-- `files.json` stores discovered file metadata: filename, extension, byte size, discovery time, last seen time, modified time, source path, SHA-256 checksum, processing status, and associated project when known. After processing it also records the preserved source, extraction status, extraction outputs, processor, timestamps, warnings, and job ID.
-- `jobs.json` stores processing jobs: ID, source file, job type, creation/update/working/completion/failure times, status, processor, input location, output location, warnings, and error information.
+- `files.json` stores discovered file metadata: filename, extension, byte size, discovery time, last seen time, modified time, source path, SHA-256 checksum, processing status, and associated project when known. Shared-file locations use portable `/`-separated references relative to the configured shared root; the optional `producerSourcePath` retains the producer's native absolute source path for provenance. After processing it also records the preserved source, extraction status, extraction outputs, processor, timestamps, warnings, and job ID.
+- `jobs.json` stores processing jobs: ID, source file, job type, creation/update/working/completion/failure times, status, processor, input location, output location, warnings, and error information. Job file locations use the same portable root-relative form.
+
+Research Studio also accepts existing version-1 manifests that contain absolute producer paths. It maps only an exact recognized shared-layout reference (for example `Sources/Data/...` or `Outputs/Extracts/...`) onto the configured root; it never infers a mapping from filenames or arbitrary matching folder names. Traversal, unrecognized absolute paths, and paths that resolve through symlinks outside the configured root are rejected. No manifest rewrite is required for this compatibility mode.
 
 Repeated scans update an existing file entry by source path instead of adding duplicates. Existing jobs are reused by source file and job type.
 

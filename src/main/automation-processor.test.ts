@@ -6,7 +6,8 @@ import {
   sharedFolderPath,
   extractOutputPath,
   manifestPath,
-  processingJobPath
+  processingJobPath,
+  resolveSharedManifestPath
 } from './automation-fs'
 import { processQueuedJobs } from './automation-processor'
 import { scanInbox } from './automation-worker'
@@ -74,9 +75,9 @@ describe('document ingestion worker', () => {
     const jobs = readManifest(root, 'jobs')
     const file = files.files.find((item) => item.filename === filename)!
     const job = jobs.jobs.find((item) => item.sourceFileId === file.id)!
-    const preservedSourcePath = file.preservedSourcePath!
-    const extractedTextPath = file.extractedTextPath!
-    const extractionRecordPath = file.extractionRecordPath!
+    const preservedSourcePath = resolveSharedManifestPath(root, file.preservedSourcePath!).path
+    const extractedTextPath = resolveSharedManifestPath(root, file.extractedTextPath!).path
+    const extractionRecordPath = resolveSharedManifestPath(root, file.extractionRecordPath!).path
     const extraction = JSON.parse(readFileSync(extractionRecordPath, 'utf8'))
 
     expect(result).toMatchObject({ consideredJobs: 1, completedJobs: 1, failedJobs: 0 })
@@ -101,12 +102,13 @@ describe('document ingestion worker', () => {
       fileId: file.id,
       jobId: job.id,
       originalFilename: filename,
-      originalSourcePath: file.sourcePath,
-      preservedSourcePath,
+      originalSourcePath: file.producerSourcePath,
+      sourcePath: file.sourcePath,
+      preservedSourcePath: file.preservedSourcePath,
       sha256: file.sha256,
       extractionStatus: 'extracted',
-      outputLocation: extractionRecordPath,
-      textOutputLocation: extractedTextPath
+      outputLocation: file.extractionRecordPath,
+      textOutputLocation: file.extractedTextPath
     })
     expect(existsSync(processingJobPath(root, 'queued', job.id))).toBe(false)
     expect(existsSync(processingJobPath(root, 'working', job.id))).toBe(false)
@@ -120,14 +122,18 @@ describe('document ingestion worker', () => {
     await processQueuedJobs({ sharedDataRoot: root, dryRun: false })
 
     const file = readManifest(root, 'files').files[0]
-    const extraction = JSON.parse(readFileSync(file.extractionRecordPath!, 'utf8'))
+    const extraction = JSON.parse(
+      readFileSync(resolveSharedManifestPath(root, file.extractionRecordPath!).path, 'utf8')
+    )
     expect(extraction).toMatchObject({
       extractionStatus: 'extracted',
       pageCount: 1,
       characterCount: expect.any(Number),
       normalizedText: expect.stringContaining('Embedded PDF research text')
     })
-    expect(readFileSync(file.extractedTextPath!, 'utf8')).toContain('--- Page 1 ---')
+    expect(
+      readFileSync(resolveSharedManifestPath(root, file.extractedTextPath!).path, 'utf8')
+    ).toContain('--- Page 1 ---')
   })
 
   it('completes scanned PDFs with an explicit needs-ocr status', async () => {
@@ -156,9 +162,7 @@ describe('document ingestion worker', () => {
     expect(second.consideredJobs).toBe(0)
     expect(jobs.jobs).toHaveLength(1)
     expect(jobs.jobs[0].status).toBe('complete')
-    expect(jobs.jobs[0].outputLocation).toBe(
-      extractOutputPath(root, jobs.jobs[0].sourceFileId, 'json')
-    )
+    expect(jobs.jobs[0].outputLocation).toBe(`Outputs/Extracts/${jobs.jobs[0].sourceFileId}.json`)
   })
 
   it('fails unsupported files while preserving the source and continuing the queue', async () => {
@@ -181,7 +185,9 @@ describe('document ingestion worker', () => {
     expect(jobs.find((item) => item.sourceFileId === unsupported.id)!.error!.message).toContain(
       'unsupported-file-type'
     )
-    expect(existsSync(unsupported.preservedSourcePath!)).toBe(true)
+    expect(existsSync(resolveSharedManifestPath(root, unsupported.preservedSourcePath!).path)).toBe(
+      true
+    )
     expect(valid.processingStatus).toBe('complete')
   })
 

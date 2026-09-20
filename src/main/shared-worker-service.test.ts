@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DATA_ROOT_ENV } from './automation-config'
-import { manifestPath, sharedFolderPath } from './automation-fs'
+import { ensureSharedFolderStructure, manifestPath, sharedFolderPath } from './automation-fs'
 import { processQueuedJobs } from './automation-processor'
 import { scanInbox } from './automation-worker'
 import { WorkspaceDatabase } from './database'
@@ -67,12 +67,146 @@ async function completedWorkerRoot(
   return root
 }
 
+function foreignRoot(platform: 'macos' | 'windows'): string {
+  return platform === 'macos'
+    ? '/Users/andrewpope/Library/CloudStorage/OneDrive-Personal/Research Studio Shared'
+    : 'C:\\Users\\anjap\\OneDrive\\Research Studio Shared'
+}
+
+function foreignPath(platform: 'macos' | 'windows', ...segments: string[]): string {
+  return `${foreignRoot(platform)}${platform === 'macos' ? '/' : '\\'}${segments.join(
+    platform === 'macos' ? '/' : '\\'
+  )}`
+}
+
+function writeForeignCompletedManifest(root: string, platform: 'macos' | 'windows'): string {
+  const now = '2026-09-20T12:00:00.000Z'
+  const fileId = `file-${platform}-portable`
+  const jobId = `job-${platform}-portable`
+  const text = `Portable ${platform} extraction text`
+  ensureSharedFolderStructure(root, false)
+  writeFileSync(join(sharedFolderPath(root, 'inbox'), 'portable.txt'), 'Portable source')
+  writeFileSync(join(sharedFolderPath(root, 'sourceData'), 'portable.txt'), 'Portable source')
+  writeFileSync(join(sharedFolderPath(root, 'outputExtracts'), `${fileId}.txt`), text)
+  writeFileSync(
+    join(sharedFolderPath(root, 'outputExtracts'), `${fileId}.json`),
+    JSON.stringify({
+      extractionStatus: 'extracted',
+      normalizedText: text,
+      extractor: 'fixture/1',
+      pageCount: null,
+      warnings: [],
+      outputLocation: foreignPath(platform, 'Outputs', 'Extracts', `${fileId}.json`),
+      textOutputLocation: foreignPath(platform, 'Outputs', 'Extracts', `${fileId}.txt`)
+    })
+  )
+  writeFileSync(
+    manifestPath(root, 'files.json'),
+    JSON.stringify({
+      format: 'research-studio-file-manifest',
+      version: 1,
+      updatedAt: now,
+      files: [
+        {
+          id: fileId,
+          filename: 'portable.txt',
+          extension: 'txt',
+          byteSize: 15,
+          discoveredAt: now,
+          lastSeenAt: now,
+          modifiedAt: now,
+          sourcePath: foreignPath(platform, 'Inbox', 'portable.txt'),
+          sha256: 'a'.repeat(64),
+          processingStatus: 'complete',
+          associatedProject: null,
+          preservedSourcePath: foreignPath(platform, 'Sources', 'Data', 'portable.txt'),
+          extractionStatus: 'extracted',
+          extractedTextPath: foreignPath(platform, 'Outputs', 'Extracts', `${fileId}.txt`),
+          extractionRecordPath: foreignPath(platform, 'Outputs', 'Extracts', `${fileId}.json`),
+          processedAt: now,
+          processedBy: 'fixture/1',
+          processingJobId: jobId,
+          warnings: []
+        }
+      ]
+    })
+  )
+  writeFileSync(
+    manifestPath(root, 'jobs.json'),
+    JSON.stringify({
+      format: 'research-studio-job-manifest',
+      version: 1,
+      updatedAt: now,
+      jobs: [
+        {
+          id: jobId,
+          sourceFileId: fileId,
+          sourcePath: foreignPath(platform, 'Inbox', 'portable.txt'),
+          jobType: 'ingest-inbox-file',
+          createdAt: now,
+          updatedAt: now,
+          queuedAt: now,
+          workingAt: now,
+          completedAt: now,
+          status: 'complete',
+          processor: 'fixture/1',
+          inputLocation: foreignPath(platform, 'Inbox', 'portable.txt'),
+          outputLocation: foreignPath(platform, 'Outputs', 'Extracts', `${fileId}.json`),
+          warnings: [],
+          error: null
+        }
+      ]
+    })
+  )
+  return fileId
+}
+
 afterEach(() => {
   vi.unstubAllEnvs()
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
 describe('SharedWorkerService', () => {
+  it.each(['macos', 'windows'] as const)(
+    'consumes a %s-produced legacy manifest with local portable paths',
+    (platform) => {
+      const root = temporary(`research-studio-${platform}-consumer-`)
+      const fileId = writeForeignCompletedManifest(root, platform)
+      const database = new WorkspaceDatabase(temporary(`research-studio-${platform}-workspace-`))
+      const service = new SharedWorkerService({ [DATA_ROOT_ENV]: root })
+      try {
+        expect(service.status()).toMatchObject({ connection: 'connected', completedJobs: 1 })
+        const document = service.documents()[0]
+        expect(document).toMatchObject({
+          fileId,
+          sourcePath: join(sharedFolderPath(root, 'inbox'), 'portable.txt'),
+          producerSourcePath: foreignPath(platform, 'Inbox', 'portable.txt'),
+          preservedSourcePath: join(sharedFolderPath(root, 'sourceData'), 'portable.txt'),
+          extractionRecordPath: join(sharedFolderPath(root, 'outputExtracts'), `${fileId}.json`)
+        })
+        const imported = service.importDocument(fileId, database)
+        expect(imported).toMatchObject({ imported: true, duplicate: false })
+        const source = imported.source!
+        expect(source.files[0]).toMatchObject({
+          workerFileId: fileId,
+          workerOriginalPath: foreignPath(platform, 'Inbox', 'portable.txt'),
+          workerPreservedPath: join(sharedFolderPath(root, 'sourceData'), 'portable.txt'),
+          extractionText: `Portable ${platform} extraction text`
+        })
+        expect(database.search(`Portable ${platform}`, ['source'])).toMatchObject([
+          { entityId: source.id }
+        ])
+        expect(service.importDocument(fileId, database)).toMatchObject({
+          imported: false,
+          duplicate: true,
+          source: { id: source.id }
+        })
+      } finally {
+        database.close()
+      }
+    }
+  )
+
   it('imports a deterministic worker ID through WorkspaceService with separate source identity', async () => {
     const text = '# Imported\n\nCanonical text'
     const root = await completedWorkerRoot('import.md', text)
@@ -105,7 +239,7 @@ describe('SharedWorkerService', () => {
         workerJobId: document.jobId,
         workerOriginalPath: document.sourcePath,
         workerPreservedPath: document.preservedSourcePath,
-        workerExtractionPath: document.extractionRecordPath,
+        workerExtractionPath: metadata.extractionRecordPath,
         workerExtractionStatus: 'extracted',
         workerProcessedAt: document.processedAt,
         workerProcessor: document.processor,

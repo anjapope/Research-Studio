@@ -1,9 +1,23 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_ROOT_ENV, DRY_RUN_ENV, loadWorkerConfig } from './automation-config'
-import { manifestPath, processingJobPath, sharedFolderPath, sharedPath } from './automation-fs'
+import {
+  existingSharedManifestPath,
+  manifestPath,
+  processingJobPath,
+  sharedFolderPath,
+  sharedPath
+} from './automation-fs'
 import { emptyJobsManifest, enqueueJob, transitionJob, type JobRecord } from './automation-manifest'
 import { scanInbox } from './automation-worker'
 
@@ -47,6 +61,24 @@ describe('automation worker foundation', () => {
       join(root, 'Processing', 'Queued', 'job-abc.json')
     )
     expect(() => sharedPath(root, '..', 'outside')).toThrow('escaped the configured')
+  })
+
+  it('rejects traversal, unrecognized foreign absolute paths, and symlink escapes', () => {
+    const root = temporary()
+    scanInbox({ sharedDataRoot: root, dryRun: false })
+    expect(() => existingSharedManifestPath(root, 'Sources/Data/../outside.txt')).toThrow(
+      'traversal'
+    )
+    expect(() =>
+      existingSharedManifestPath(root, '/Users/andrew/Documents/not-a-shared-root.txt')
+    ).toThrow('recognized shared-folder')
+    const outside = temporary('research-studio-outside-')
+    writeFileSync(join(outside, 'escape.txt'), 'outside')
+    const link = join(sharedFolderPath(root, 'sourceData'), 'linked')
+    symlinkSync(outside, link, 'junction')
+    expect(() => existingSharedManifestPath(root, 'Sources/Data/linked/escape.txt')).toThrow(
+      'symlink outside'
+    )
   })
 
   it('dry-runs inbox scans without creating manifests, logs, or processing files', () => {
@@ -94,6 +126,14 @@ describe('automation worker foundation', () => {
     expect(second).toMatchObject({ scannedFiles: 1, newFiles: 0, queuedJobs: 0 })
     expect(files.files).toHaveLength(1)
     expect(jobs.jobs).toHaveLength(1)
+    expect(files.files[0]).toMatchObject({
+      sourcePath: 'Inbox/source.md',
+      producerSourcePath: inboxFile
+    })
+    expect(jobs.jobs[0]).toMatchObject({
+      sourcePath: 'Inbox/source.md',
+      producerSourcePath: inboxFile
+    })
     expect(jobs.jobs[0].outputLocation).toBeNull()
     expect(existsSync(processingJobPath(root, 'queued', jobs.jobs[0].id))).toBe(true)
   })

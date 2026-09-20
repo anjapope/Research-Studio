@@ -71,6 +71,7 @@ export interface SharedWorkerDocument {
   extension: string
   byteSize: number
   sourcePath: string
+  producerSourcePath: string | null
   preservedSourcePath: string | null
   extractionStatus: 'extracted' | 'needs-ocr' | 'failed' | null
   extractedTextPath: string | null

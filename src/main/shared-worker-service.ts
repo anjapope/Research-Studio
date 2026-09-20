@@ -1,8 +1,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
-import { resolve, sep } from 'path'
+import { resolve } from 'path'
 import { z } from 'zod'
 import { loadWorkerConfig, type WorkerConfig } from './automation-config'
-import { sharedFolderPath } from './automation-fs'
+import {
+  existingSharedManifestPath,
+  resolveSharedManifestPath,
+  sharedFolderPath
+} from './automation-fs'
 import {
   filesManifestSchema,
   jobsManifestSchema,
@@ -113,10 +117,7 @@ export class SharedWorkerService {
       if (document.jobStatus !== 'complete') {
         return this.importFailure('Only completed worker documents can be imported.')
       }
-      if (
-        !document.preservedSourcePath ||
-        !this.safeExistingPath(config.sharedDataRoot, document.preservedSourcePath)
-      ) {
+      if (!document.preservedSourcePath || !existsSync(document.preservedSourcePath)) {
         return this.importFailure('The preserved worker source is unavailable.')
       }
       const duplicate = database.findSourceByWorkerFileId(file.id)
@@ -133,7 +134,7 @@ export class SharedWorkerService {
         workerFileId: file.id,
         workerJobId: job?.id ?? null,
         originalName: file.filename,
-        originalPath: file.sourcePath,
+        originalPath: file.producerSourcePath ?? file.sourcePath,
         preservedPath: document.preservedSourcePath,
         extractionPath: file.extractionRecordPath ?? null,
         extractionStatus: this.applicationExtractionStatus(file.extractionStatus),
@@ -183,44 +184,39 @@ export class SharedWorkerService {
       JSON.parse(readFileSync(resolve(manifestRoot, 'jobs.json'), 'utf8'))
     ).jobs
     for (const file of files) {
-      this.safeManifestPath(config.sharedDataRoot, file.sourcePath)
+      existingSharedManifestPath(config.sharedDataRoot, file.sourcePath)
       for (const path of [
         file.preservedSourcePath,
         file.extractedTextPath,
         file.extractionRecordPath
       ]) {
-        if (path) this.safeManifestPath(config.sharedDataRoot, path)
+        if (path) resolveSharedManifestPath(config.sharedDataRoot, path)
       }
     }
-    for (const job of jobs) this.safeManifestPath(config.sharedDataRoot, job.sourcePath)
+    for (const job of jobs) {
+      existingSharedManifestPath(config.sharedDataRoot, job.sourcePath)
+      if (job.inputLocation) resolveSharedManifestPath(config.sharedDataRoot, job.inputLocation)
+      if (job.outputLocation) resolveSharedManifestPath(config.sharedDataRoot, job.outputLocation)
+    }
     return { config, files, jobs }
   }
 
   private toDocument(root: string, file: FileMetadata, jobs: JobRecord[]): SharedWorkerDocument {
     const job = jobs.find((item) => item.sourceFileId === file.id) ?? null
-    const preservedSourcePath = file.preservedSourcePath
-      ? this.safeExistingPath(root, file.preservedSourcePath)
-        ? file.preservedSourcePath
-        : null
-      : null
-    const extractionRecordPath = file.extractionRecordPath
-      ? this.safeExistingPath(root, file.extractionRecordPath)
-        ? file.extractionRecordPath
-        : null
-      : null
+    const preservedSourcePath = this.existingPath(root, file.preservedSourcePath)
+    const extractionRecordPath = this.existingPath(root, file.extractionRecordPath)
     return {
       fileId: file.id,
       jobId: job?.id ?? file.processingJobId ?? null,
       filename: file.filename,
       extension: file.extension,
       byteSize: file.byteSize,
-      sourcePath: this.safeManifestPath(root, file.sourcePath),
+      sourcePath: existingSharedManifestPath(root, file.sourcePath).path,
+      producerSourcePath:
+        file.producerSourcePath ?? (this.isAbsolutePath(file.sourcePath) ? file.sourcePath : null),
       preservedSourcePath,
       extractionStatus: this.applicationExtractionStatus(file.extractionStatus),
-      extractedTextPath:
-        file.extractedTextPath && this.safeExistingPath(root, file.extractedTextPath)
-          ? file.extractedTextPath
-          : null,
+      extractedTextPath: this.existingPath(root, file.extractedTextPath),
       extractionRecordPath,
       processedAt: file.processedAt ?? null,
       processor: file.processedBy ?? null,
@@ -245,9 +241,12 @@ export class SharedWorkerService {
     root: string,
     file: FileMetadata
   ): z.infer<typeof extractionRecordSchema> | null {
-    if (!file.extractionRecordPath || !this.safeExistingPath(root, file.extractionRecordPath))
-      return null
-    return extractionRecordSchema.parse(JSON.parse(readFileSync(file.extractionRecordPath, 'utf8')))
+    const path = this.existingPath(root, file.extractionRecordPath)
+    if (!path) return null
+    const record = extractionRecordSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
+    if (record.outputLocation) resolveSharedManifestPath(root, record.outputLocation)
+    if (record.textOutputLocation) resolveSharedManifestPath(root, record.textOutputLocation)
+    return record
   }
 
   private applicationExtractionStatus(
@@ -258,18 +257,17 @@ export class SharedWorkerService {
     return null
   }
 
-  private safeManifestPath(root: string, path: string): string {
-    const candidate = resolve(path)
-    const normalizedRoot = resolve(root)
-    if (candidate !== normalizedRoot && !candidate.startsWith(`${normalizedRoot}${sep}`)) {
-      throw new Error('The shared worker manifest contains a path outside its configured root.')
+  private existingPath(root: string, path: string | null | undefined): string | null {
+    if (!path) return null
+    try {
+      return existingSharedManifestPath(root, path).path
+    } catch {
+      return null
     }
-    return candidate
   }
 
-  private safeExistingPath(root: string, path: string): boolean {
-    const candidate = this.safeManifestPath(root, path)
-    return existsSync(candidate) && statSync(candidate).isFile()
+  private isAbsolutePath(path: string): boolean {
+    return path.startsWith('/') || /^[a-z]:[\\/]/i.test(path) || path.startsWith('\\\\')
   }
 
   private latestActivity(root: string): string | null {

@@ -15,6 +15,7 @@ import {
   listInboxFiles,
   manifestPath,
   processingJobPath,
+  sharedPathReference,
   workerLogPath
 } from './automation-fs'
 import {
@@ -64,18 +65,20 @@ function stableId(prefix: string, value: string): string {
   return `${prefix}-${createHash('sha256').update(value).digest('hex')}`
 }
 
-function fileMetadata(path: string, now: Date): FileMetadata {
+function fileMetadata(root: string, path: string, now: Date): FileMetadata {
   const stats = statSync(path)
   const checksum = sha256File(path)
+  const sourcePath = sharedPathReference(root, path)
   return {
-    id: stableId('file', `${path}\0${checksum}`),
+    id: stableId('file', `${sourcePath}\0${checksum}`),
     filename: basename(path),
     extension: extname(path).replace(/^\./, '').toLowerCase(),
     byteSize: stats.size,
     discoveredAt: now.toISOString(),
     lastSeenAt: now.toISOString(),
     modifiedAt: stats.mtime.toISOString(),
-    sourcePath: path,
+    sourcePath,
+    producerSourcePath: path,
     sha256: checksum,
     processingStatus: 'queued',
     associatedProject: null
@@ -87,6 +90,7 @@ function ingestionJob(file: FileMetadata, now: Date): JobRecord {
     id: stableId('job', `${file.id}\0ingest-inbox-file`),
     sourceFileId: file.id,
     sourcePath: file.sourcePath,
+    producerSourcePath: file.producerSourcePath,
     jobType: 'ingest-inbox-file',
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -121,7 +125,7 @@ export function scanInbox(config: WorkerConfig, now = new Date()): ScanInboxResu
   let queuedJobs = 0
 
   for (const path of files) {
-    const metadata = fileMetadata(path, now)
+    const metadata = fileMetadata(config.sharedDataRoot, path, now)
     const upserted = upsertFileMetadata(filesManifest, metadata, now)
     if (upserted.created) newFiles += 1
     actions.push({
