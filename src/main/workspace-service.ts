@@ -36,7 +36,10 @@ import type {
   IntegrityReport,
   WorkspacePackageSummary,
   OcrResult,
-  WorkspaceInfo
+  WorkspaceInfo,
+  SharedWorkerDocument,
+  SharedWorkerImportResult,
+  SharedWorkerStatus
 } from '../shared/domain'
 import { WorkspaceDatabase } from './database'
 import { exportLibrary, parseLibrary } from './interchange'
@@ -71,12 +74,15 @@ import type { Lesson, TeachingSource } from '../shared/teaching'
 import { DiscoveryService } from './discovery-service'
 import { TeachingService } from './teaching-service'
 import { WorkspaceLifecycle } from './workspace-lifecycle'
+import { SharedWorkerService } from './shared-worker-service'
+import { fileMetadataSchema } from './automation-manifest'
 
 export class WorkspaceService {
   private readonly lifecycle = new WorkspaceLifecycle()
   private readonly teaching = new TeachingService(() => this.requireDatabase())
   private readonly discovery = new DiscoveryService(() => this.requireDatabase())
   readonly teachingSettings = this.teaching.teachingSettings
+  readonly sharedWorker = new SharedWorkerService()
 
   cancelTeachingSynthesis(): void {
     this.teaching.cancelTeachingSynthesis()
@@ -126,6 +132,28 @@ export class WorkspaceService {
     return this.requireDatabase().saveSource(sourceDraftSchema.parse(draft))
   }
 
+  workerStatus(): SharedWorkerStatus {
+    return this.sharedWorker.status()
+  }
+
+  workerDocuments(): SharedWorkerDocument[] {
+    const documents = this.sharedWorker.documents()
+    const database = this.database
+    if (!database) return documents
+    return documents.map((document) => ({
+      ...document,
+      importedSourceId: database.findSourceByWorkerFileId(document.fileId)?.id ?? null
+    }))
+  }
+
+  importWorkerDocument(fileId: string): SharedWorkerImportResult {
+    // Worker IDs are manifest identities; source UUIDs are assigned during source creation.
+    return this.sharedWorker.importDocument(
+      fileMetadataSchema.shape.id.parse(fileId),
+      this.requireDatabase()
+    )
+  }
+
   removeSource(id: string): void {
     this.requireDatabase().removeSource(idSchema.parse(id))
   }
@@ -143,7 +171,7 @@ export class WorkspaceService {
 
   async openFile(fileId: string): Promise<void> {
     const error = await shell.openPath(this.requireDatabase().filePath(idSchema.parse(fileId)))
-    if (error) throw new Error(`Could not open the PDF: ${error}`)
+    if (error) throw new Error(`Could not open the source file: ${error}`)
   }
 
   pdfData(fileId: string): Uint8Array {

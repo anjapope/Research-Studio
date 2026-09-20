@@ -43,6 +43,11 @@ const api: ResearchStudioApi = {
     importLibrary: () => electronAPI.ipcRenderer.invoke('sources:import-library'),
     exportLibrary: (format) => electronAPI.ipcRenderer.invoke('sources:export-library', format)
   },
+  worker: {
+    status: () => electronAPI.ipcRenderer.invoke('worker:status'),
+    documents: () => electronAPI.ipcRenderer.invoke('worker:documents'),
+    importDocument: (fileId) => electronAPI.ipcRenderer.invoke('worker:import-document', fileId)
+  },
   reader: {
     listPageSummaries: (fileId) => electronAPI.ipcRenderer.invoke('reader:page-summaries', fileId),
     pdfData: (id) => electronAPI.ipcRenderer.invoke('reader:pdf-data', id),

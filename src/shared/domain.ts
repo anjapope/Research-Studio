@@ -38,6 +38,56 @@ export interface SourceFile {
   byteSize: number
   sha256: string
   importedAt: string
+  workerFileId: string | null
+  workerJobId: string | null
+  workerOriginalPath: string | null
+  workerPreservedPath: string | null
+  workerExtractionPath: string | null
+  workerExtractionStatus: 'extracted' | 'needs-ocr' | 'failed' | null
+  workerProcessedAt: string | null
+  workerProcessor: string | null
+  extractionText: string | null
+}
+
+export type SharedWorkerConnection =
+  'connected' | 'not-configured' | 'unavailable' | 'invalid-state'
+
+export interface SharedWorkerStatus {
+  connection: SharedWorkerConnection
+  root: string | null
+  queuedJobs: number
+  workingJobs: number
+  completedJobs: number
+  failedJobs: number
+  processedFiles: number
+  latestActivity: string | null
+  message: string | null
+}
+
+export interface SharedWorkerDocument {
+  fileId: string
+  jobId: string | null
+  filename: string
+  extension: string
+  byteSize: number
+  sourcePath: string
+  preservedSourcePath: string | null
+  extractionStatus: 'extracted' | 'needs-ocr' | 'failed' | null
+  extractedTextPath: string | null
+  extractionRecordPath: string | null
+  processedAt: string | null
+  processor: string | null
+  warnings: string[]
+  jobStatus: 'queued' | 'working' | 'complete' | 'failed' | null
+  jobError: string | null
+  importedSourceId: string | null
+}
+
+export interface SharedWorkerImportResult {
+  imported: boolean
+  duplicate: boolean
+  source: Source | null
+  message: string
 }
 
 export interface Source {
@@ -478,6 +528,11 @@ export interface ResearchStudioApi {
     openFile: (fileId: string) => Promise<void>
     importLibrary: () => Promise<ImportSummary | null>
     exportLibrary: (format: LibraryFormat) => Promise<number | null>
+  }
+  worker: {
+    status: () => Promise<SharedWorkerStatus>
+    documents: () => Promise<SharedWorkerDocument[]>
+    importDocument: (fileId: string) => Promise<SharedWorkerImportResult>
   }
   reader: {
     listPageSummaries: (fileId: string) => Promise<DocumentPageSummary[]>

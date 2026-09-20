@@ -1646,6 +1646,144 @@ kbd {
   font-size: 11px;
 }
 
+.worker-panel {
+  margin: 0 30px 14px;
+  padding: 14px 16px;
+  background: #f7f8f3;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.worker-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.worker-panel-heading .eyebrow {
+  margin-bottom: 4px;
+}
+
+.worker-panel-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.worker-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.worker-counts span,
+.worker-imported,
+.worker-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #63736a;
+  font-size: 10px;
+}
+
+.worker-counts span {
+  padding: 4px 7px;
+  background: #e9eee8;
+  border-radius: 12px;
+}
+
+.worker-message {
+  margin: 9px 0 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.worker-documents {
+  margin-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.worker-document {
+  min-height: 48px;
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.worker-document:last-child {
+  border-bottom: 0;
+}
+
+.worker-document-icon {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  color: #547a68;
+  background: #e1ebe3;
+  border-radius: 5px;
+}
+
+.worker-document-summary {
+  min-width: 0;
+  flex: 1;
+}
+
+.worker-document-summary strong,
+.worker-document-summary span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-document-summary strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.worker-document-summary span {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.worker-document-summary small {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #9b594c;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-imported {
+  color: #3d7655;
+  white-space: nowrap;
+}
+
+.worker-failed {
+  color: #9b594c;
+  white-space: nowrap;
+}
+
+.spin {
+  animation: worker-spin 0.9s linear infinite;
+}
+
+@keyframes worker-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .library-layout {
   min-height: 0;
   flex: 1;

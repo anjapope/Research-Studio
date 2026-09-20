@@ -384,5 +384,46 @@ export const migrations: Migration[] = [
     name: 'teaching-lessons',
     sql: `CREATE TABLE teaching_lessons (id TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at TEXT NOT NULL);
       UPDATE workspace SET schema_version = 10;`
+  },
+  {
+    version: 11,
+    name: 'shared-worker-provenance',
+    sql: `
+      ALTER TABLE source_files ADD COLUMN worker_file_id TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_job_id TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_original_path TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_preserved_path TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_extraction_path TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_extraction_status TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_processed_at TEXT;
+      ALTER TABLE source_files ADD COLUMN worker_processor TEXT;
+      CREATE UNIQUE INDEX source_worker_file_idx ON source_files(worker_file_id)
+        WHERE worker_file_id IS NOT NULL;
+      CREATE TABLE source_extractions (
+        source_file_id TEXT PRIMARY KEY REFERENCES source_files(id) ON DELETE CASCADE,
+        extraction_status TEXT NOT NULL,
+        text TEXT NOT NULL DEFAULT '',
+        output_path TEXT,
+        record_path TEXT,
+        extractor TEXT,
+        page_count INTEGER,
+        warnings_json TEXT NOT NULL DEFAULT '[]',
+        imported_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      UPDATE workspace SET schema_version = 11;`
+  },
+  {
+    version: 12,
+    name: 'source-extraction-search',
+    sql: `
+      CREATE TRIGGER search_dirty_extractions_insert AFTER INSERT ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      CREATE TRIGGER search_dirty_extractions_update AFTER UPDATE ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      CREATE TRIGGER search_dirty_extractions_delete AFTER DELETE ON source_extractions
+      BEGIN UPDATE search_index_state SET dirty = 1 WHERE id = 1; END;
+      UPDATE search_index_state SET dirty = 1 WHERE id = 1;
+      UPDATE workspace SET schema_version = 12;`
   }
 ]

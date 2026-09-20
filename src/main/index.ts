@@ -102,6 +102,11 @@ app.whenReady().then(() => {
   ipcMain.handle('sources:open-file', (_, id) => workspaceService.openFile(id))
   ipcMain.handle('sources:import-library', () => workspaceService.importLibrary())
   ipcMain.handle('sources:export-library', (_, format) => workspaceService.exportLibrary(format))
+  ipcMain.handle('worker:status', () => workspaceService.workerStatus())
+  ipcMain.handle('worker:documents', () => workspaceService.workerDocuments())
+  ipcMain.handle('worker:import-document', (_, fileId) =>
+    workspaceService.importWorkerDocument(fileId)
+  )
   ipcMain.handle('reader:pdf-data', (_, id) => workspaceService.pdfData(id))
   ipcMain.handle('reader:page-summaries', (_, id) => workspaceService.listDocumentPageSummaries(id))
   ipcMain.handle('reader:list-excerpts', (_, sourceId) => workspaceService.listExcerpts(sourceId))
