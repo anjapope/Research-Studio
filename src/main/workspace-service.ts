@@ -1,7 +1,7 @@
-import { app, dialog, shell } from 'electron'
+import { dialog, shell } from 'electron'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { basename, extname, join, resolve } from 'path'
+import { readFileSync, statSync, writeFileSync } from 'fs'
+import { basename, extname, resolve } from 'path'
 import type {
   AnalysisQuery,
   AnalysisResult,
@@ -68,10 +68,12 @@ import {
 import { recognizeEnglish } from './ocr-service'
 import { extractManuscript } from './manuscript-import'
 import type { Lesson, TeachingSource } from '../shared/teaching'
-import { TeachingService } from './teaching-service'
 import { DiscoveryService } from './discovery-service'
+import { TeachingService } from './teaching-service'
+import { WorkspaceLifecycle } from './workspace-lifecycle'
 
 export class WorkspaceService {
+  private readonly lifecycle = new WorkspaceLifecycle()
   private readonly teaching = new TeachingService(() => this.requireDatabase())
   private readonly discovery = new DiscoveryService(() => this.requireDatabase())
   readonly teachingSettings = this.teaching.teachingSettings
@@ -99,35 +101,17 @@ export class WorkspaceService {
     return this.teaching.exportLesson(input, format)
   }
 
-  private database: WorkspaceDatabase | null = null
-  private readonly preferencesPath = join(app.getPath('userData'), 'preferences.json')
-
   async choose(mode: 'create' | 'open'): Promise<WorkspaceInfo | null> {
-    const result = await dialog.showOpenDialog({
-      title:
-        mode === 'create'
-          ? 'Choose a folder for the new workspace'
-          : 'Open a Research Studio workspace',
-      properties: ['openDirectory', mode === 'create' ? 'createDirectory' : 'dontAddToRecent']
-    })
-    if (result.canceled || !result.filePaths[0]) return null
-    return this.open(result.filePaths[0])
+    return this.lifecycle.choose(mode)
   }
 
   recent(): WorkspaceInfo | null {
-    if (!existsSync(this.preferencesPath)) return null
-    const parsed = JSON.parse(readFileSync(this.preferencesPath, 'utf8')) as {
-      recentWorkspace?: unknown
-    }
-    if (typeof parsed.recentWorkspace !== 'string' || !existsSync(parsed.recentWorkspace))
-      return null
-    return this.open(parsed.recentWorkspace)
+    return this.lifecycle.recent()
   }
 
   close(): void {
     this.cancelTeachingSynthesis()
-    this.database?.close()
-    this.database = null
+    this.lifecycle.close()
   }
 
   listSources(query?: SourceQuery): Source[] {
@@ -672,7 +656,7 @@ export class WorkspaceService {
     if (destinationResult.canceled || !destinationResult.filePaths[0]) return null
     const destination = destinationResult.filePaths[0]
     restoreWorkspacePackage(packageResult.filePaths[0], destination)
-    return this.open(destination)
+    return this.lifecycle.open(destination)
   }
 
   async exportQualitative(format: QualitativeExportFormat): Promise<number | null> {
@@ -780,21 +764,8 @@ export class WorkspaceService {
     return sources.length
   }
 
-  private open(path: string): WorkspaceInfo {
-    this.close()
-    const normalized = resolve(path)
-    this.database = new WorkspaceDatabase(normalized)
-    writeFileSync(
-      this.preferencesPath,
-      JSON.stringify({ recentWorkspace: normalized }, null, 2),
-      'utf8'
-    )
-    return this.database.info()
-  }
-
   private requireDatabase(): WorkspaceDatabase {
-    if (!this.database) throw new Error('Open a workspace before managing sources.')
-    return this.database
+    return this.lifecycle.requireDatabase()
   }
 
   private citationIdentity(title: string, year: number | null, doi: string | null): string {

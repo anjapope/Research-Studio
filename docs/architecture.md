@@ -74,6 +74,7 @@ Main-process code. Current responsibilities include:
 Key files:
 
 - `index.ts`: Electron startup and IPC registration
+- `workspace-lifecycle.ts`: active workspace/database ownership, recent-workspace preferences, and open/close lifecycle
 - `workspace-service.ts`: application orchestration façade for almost all features
 - `database.ts`: SQLite schema access, record hydration, file-copy logic, derived search index logic
 - `migrations.ts`: schema evolution
@@ -165,15 +166,15 @@ Presentation and orchestration are partly mixed. `App.tsx`, `TeachingView.tsx`, 
 
 The main orchestration boundary is `WorkspaceService`.
 
-`WorkspaceService` now remains the renderer-facing façade, but feature responsibilities are starting to move into dedicated collaborators. `TeachingService` and `DiscoveryService` both use the currently active `WorkspaceDatabase` instance through `WorkspaceService.requireDatabase()`.
+`WorkspaceService` now remains the renderer-facing façade, but feature responsibilities are starting to move into dedicated collaborators. `WorkspaceLifecycle` owns the active `WorkspaceDatabase`, recent-workspace preferences, and workspace open/close behavior. `TeachingService` and `DiscoveryService` both continue to use the currently active `WorkspaceDatabase` instance through the existing `WorkspaceService.requireDatabase()` bridge.
 
 It currently handles:
 
-- workspace selection/open/close
 - dialog interaction
 - validation entry points
 - feature-level command routing
 - import/export coordination
+- delegation to `WorkspaceLifecycle` for active-workspace and database lifecycle ownership
 - delegation to `TeachingService` for teaching AI request lifecycle, lesson import/export, and lesson persistence commands
 - delegation to `DiscoveryService` for search validation, index status, and index rebuild commands
 - preservation command routing
@@ -195,6 +196,8 @@ This is a clear modularization seam for future Mayday work.
 ### 5.3 Persistence / state
 
 The canonical workspace state lives in SQLite plus managed files on disk.
+
+There remains exactly one authoritative local SQLite writer in the desktop app at a time, owned through `WorkspaceLifecycle`. This stage does not introduce remote workers, distributed writes, or multi-machine database ownership.
 
 `WorkspaceDatabase` owns:
 
