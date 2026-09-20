@@ -6,6 +6,7 @@ interface SharedWorkerPanelProps {
   onError: (message: string) => void
   onNotice: (message: string) => void
   onImported: () => Promise<void>
+  onOpenLibrarySource: (sourceId: string) => Promise<void>
 }
 
 function connectionLabel(status: SharedWorkerStatus): string {
@@ -26,7 +27,8 @@ function documentLabel(document: SharedWorkerDocument): string {
 export default function SharedWorkerPanel({
   onError,
   onNotice,
-  onImported
+  onImported,
+  onOpenLibrarySource
 }: SharedWorkerPanelProps): React.JSX.Element {
   const [status, setStatus] = useState<SharedWorkerStatus | null>(null)
   const [documents, setDocuments] = useState<SharedWorkerDocument[]>([])
@@ -114,9 +116,14 @@ export default function SharedWorkerPanel({
                   )}
                 </div>
                 {imported ? (
-                  <span className="worker-imported">
+                  <button
+                    className="worker-imported"
+                    aria-label={`Open ${document.filename} in Library`}
+                    title="Open in Library"
+                    onClick={() => void onOpenLibrarySource(document.importedSourceId!)}
+                  >
                     <CheckCircle2 size={14} /> In library
-                  </span>
+                  </button>
                 ) : canImport ? (
                   <button
                     className="text-button"

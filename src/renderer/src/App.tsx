@@ -119,6 +119,18 @@ function App(): React.JSX.Element {
     }
   }
 
+  async function openLibrarySource(sourceId: string): Promise<void> {
+    try {
+      const source = await window.api.sources.get(sourceId)
+      setSources((current) => [source, ...current.filter((item) => item.id !== source.id)])
+      setQuery({ sourceType: 'all', status: 'all' })
+      if (!(await navigate('sources'))) return
+      setSelectedId(source.id)
+    } catch (caught) {
+      setError(messageFrom(caught))
+    }
+  }
+
   const loadSources = useCallback(async (): Promise<void> => {
     try {
       const next = await window.api.sources.list(query)
@@ -340,7 +352,7 @@ function App(): React.JSX.Element {
             className={`nav-item ${activeView === 'sources' ? 'active' : ''}`}
             onClick={() => void navigate('sources')}
           >
-            <Library size={18} /> Sources <span>{sources.length}</span>
+            <Library size={18} /> Library <span>{sources.length}</span>
           </button>
           <button
             className={`nav-item ${activeView === 'projects' ? 'active' : ''}`}
@@ -478,7 +490,12 @@ function App(): React.JSX.Element {
             </label>
           </section>
 
-          <SharedWorkerPanel onError={setError} onNotice={setNotice} onImported={loadSources} />
+          <SharedWorkerPanel
+            onError={setError}
+            onNotice={setNotice}
+            onImported={loadSources}
+            onOpenLibrarySource={openLibrarySource}
+          />
 
           <div className="library-layout">
             <section className="source-list" aria-label="Sources">

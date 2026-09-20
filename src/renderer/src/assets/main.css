@@ -1767,6 +1767,15 @@ kbd {
 .worker-imported {
   color: #3d7655;
   white-space: nowrap;
+  padding: 0;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.worker-imported:hover,
+.worker-imported:focus-visible {
+  color: #275940;
 }
 
 .worker-failed {
