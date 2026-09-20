@@ -90,7 +90,9 @@ export class TeachingService {
       if (statSync(path).size > 50 * 1024 * 1024)
         throw new Error(`${basename(path)} exceeds the 50 MB import limit.`)
       const parsed = await extractManuscript(path)
-      const text = parsed.sections.map((section) => `${section.title}\n${section.content}`).join('\n\n')
+      const text = parsed.sections
+        .map((section) => `${section.title}\n${section.content}`)
+        .join('\n\n')
       if (!text.trim())
         throw new Error(`${basename(path)} has no readable text. Run OCR or paste a transcription.`)
       sources.push({ id: randomUUID(), title: basename(path), text })

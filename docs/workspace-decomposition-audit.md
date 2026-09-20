@@ -428,20 +428,20 @@ Potentially long operations currently routed through this service:
 
 ### 2.14 Domain ownership classification by method cluster
 
-| Domain | Current methods |
-|---|---|
-| Teaching | `cancelTeachingSynthesis`, `synthesizeTeachingLesson`, `listLessons`, `saveLesson`, `importTeachingDocuments`, `exportLesson` |
-| Workspace/application | `choose`, `recent`, `close`, `open`, `requireDatabase` |
-| Sources/citations | `listSources`, `getSource`, `saveSource`, `removeSource`, `importLibrary`, `exportLibrary`, `citationIdentity` |
-| PDFs/documents | `attachPdf`, `openFile`, `pdfData`, `listDocumentPageSummaries`, `saveDocumentPageText`, `getDocumentPageText`, `ocrPage` |
-| Evidence/provenance/codes | `listExcerpts`, `saveExcerpt`, `removeExcerpt`, `listCodes`, `manuscriptMarkdown` |
-| Projects | `listProjects`, `getProject`, `saveProject`, `removeProject`, `assignProjectSource`, `saveProjectGoal`, `removeProjectGoal`, `saveProjectNote`, `removeProjectNote`, `importProjectFiles`, `importDroppedProjectFiles`, `openProjectFile`, `revealProjectFile`, `removeProjectFile`, `exportProject` |
-| Manuscripts | `listManuscripts`, `getManuscript`, `saveManuscript`, `importManuscript`, `removeManuscript`, `saveManuscriptSection`, `removeManuscriptSection`, `addManuscriptTrace`, `exportManuscript` |
-| Revisions | `getRevisionWorkspace`, `importReviewerComments`, `analyzeManuscriptRevision`, `setRevisionSuggestionStatus`, `removeReviewDocument` |
-| Interviews/transcripts | `listInterviews`, `getInterview`, `saveInterview`, `removeInterview`, `attachInterviewMedia`, `openInterviewMedia`, `importTranscript`, `saveTranscriptSegment`, `removeTranscriptSegment` |
-| Qualitative analysis | `analyzeInterviews`, `listSynthesisMemos`, `saveSynthesisMemo`, `removeSynthesisMemo`, `exportSynthesisMemo` |
-| Preservation | `checkIntegrity`, `createBackup`, `restoreBackup`, `exportQualitative` |
-| Discovery | `search`, `searchIndexStatus`, `rebuildSearchIndex` |
+| Domain                    | Current methods                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Teaching                  | `cancelTeachingSynthesis`, `synthesizeTeachingLesson`, `listLessons`, `saveLesson`, `importTeachingDocuments`, `exportLesson`                                                                                                                                                                        |
+| Workspace/application     | `choose`, `recent`, `close`, `open`, `requireDatabase`                                                                                                                                                                                                                                               |
+| Sources/citations         | `listSources`, `getSource`, `saveSource`, `removeSource`, `importLibrary`, `exportLibrary`, `citationIdentity`                                                                                                                                                                                       |
+| PDFs/documents            | `attachPdf`, `openFile`, `pdfData`, `listDocumentPageSummaries`, `saveDocumentPageText`, `getDocumentPageText`, `ocrPage`                                                                                                                                                                            |
+| Evidence/provenance/codes | `listExcerpts`, `saveExcerpt`, `removeExcerpt`, `listCodes`, `manuscriptMarkdown`                                                                                                                                                                                                                    |
+| Projects                  | `listProjects`, `getProject`, `saveProject`, `removeProject`, `assignProjectSource`, `saveProjectGoal`, `removeProjectGoal`, `saveProjectNote`, `removeProjectNote`, `importProjectFiles`, `importDroppedProjectFiles`, `openProjectFile`, `revealProjectFile`, `removeProjectFile`, `exportProject` |
+| Manuscripts               | `listManuscripts`, `getManuscript`, `saveManuscript`, `importManuscript`, `removeManuscript`, `saveManuscriptSection`, `removeManuscriptSection`, `addManuscriptTrace`, `exportManuscript`                                                                                                           |
+| Revisions                 | `getRevisionWorkspace`, `importReviewerComments`, `analyzeManuscriptRevision`, `setRevisionSuggestionStatus`, `removeReviewDocument`                                                                                                                                                                 |
+| Interviews/transcripts    | `listInterviews`, `getInterview`, `saveInterview`, `removeInterview`, `attachInterviewMedia`, `openInterviewMedia`, `importTranscript`, `saveTranscriptSegment`, `removeTranscriptSegment`                                                                                                           |
+| Qualitative analysis      | `analyzeInterviews`, `listSynthesisMemos`, `saveSynthesisMemo`, `removeSynthesisMemo`, `exportSynthesisMemo`                                                                                                                                                                                         |
+| Preservation              | `checkIntegrity`, `createBackup`, `restoreBackup`, `exportQualitative`                                                                                                                                                                                                                               |
+| Discovery                 | `search`, `searchIndexStatus`, `rebuildSearchIndex`                                                                                                                                                                                                                                                  |
 
 ### 2.15 Methods that combine multiple domains
 

@@ -55,6 +55,10 @@ export class WorkspaceLifecycle {
     this.database = null
   }
 
+  activeDatabase(): WorkspaceDatabase | null {
+    return this.database
+  }
+
   requireDatabase(): WorkspaceDatabase {
     if (!this.database) {
       throw new Error('Open a workspace before managing sources.')

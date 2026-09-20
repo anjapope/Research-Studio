@@ -36,7 +36,13 @@ vi.mock('./database', () => ({
       state.instances.push(this)
     }
 
-    info() {
+    info(): {
+      id: string
+      name: string
+      path: string
+      createdAt: string
+      sourceCount: number
+    } {
       return {
         id: `workspace-${state.instances.indexOf(this) + 1}`,
         name: basename(this.workspacePath),
@@ -103,13 +109,16 @@ describe('WorkspaceLifecycle', () => {
 
     const lifecycle = new WorkspaceLifecycle()
 
+    expect(lifecycle.activeDatabase()).toBeNull()
     expect(() => lifecycle.requireDatabase()).toThrow('Open a workspace before managing sources.')
 
     lifecycle.open(workspacePath)
     const database = state.instances[0]
+    expect(lifecycle.activeDatabase()).toBe(database)
     lifecycle.close()
 
     expect(database?.close).toHaveBeenCalledTimes(1)
+    expect(lifecycle.activeDatabase()).toBeNull()
     expect(() => lifecycle.requireDatabase()).toThrow('Open a workspace before managing sources.')
   })
 

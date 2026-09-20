@@ -78,9 +78,17 @@ describe('workspace preservation', () => {
       codeNames: ['Durability']
     })
 
-    database.saveLesson({ id: 'lesson-test', title: 'Next week', audience: 'Class', duration: 60,
-      objectives: 'Compare readings', sources: [{ id: 'reading', title: 'Reading', text: 'Source text' }],
-      synthesis: 'Synthesis', notes: 'Lecture notes', slides: '# Slides' })
+    database.saveLesson({
+      id: 'lesson-test',
+      title: 'Next week',
+      audience: 'Class',
+      duration: 60,
+      objectives: 'Compare readings',
+      sources: [{ id: 'reading', title: 'Reading', text: 'Source text' }],
+      synthesis: 'Synthesis',
+      notes: 'Lecture notes',
+      slides: '# Slides'
+    })
     const created = createWorkspacePackage(database, packageRoot)
     const manifest = readWorkspacePackage(created.path)
     expect(manifest).toMatchObject({
@@ -99,7 +107,11 @@ describe('workspace preservation', () => {
     const restoredInfo = restoreWorkspacePackage(created.path, restorePath)
     expect(restoredInfo.name).toBe('Preserved Study')
     const restored = new WorkspaceDatabase(restorePath)
-    expect(restored.listLessons()[0]).toMatchObject({ title: 'Next week', notes: 'Lecture notes', sources: [{ text: 'Source text' }] })
+    expect(restored.listLessons()[0]).toMatchObject({
+      title: 'Next week',
+      notes: 'Lecture notes',
+      sources: [{ text: 'Source text' }]
+    })
     expect(restored.getSource(source.id).files[0].sha256).toBe(sourceFile.sha256)
     expect(restored.getInterview(interview.id)).toMatchObject({
       participantName: 'P01',

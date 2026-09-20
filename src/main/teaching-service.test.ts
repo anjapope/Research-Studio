@@ -33,7 +33,7 @@ vi.mock('./teaching-powerpoint', () => ({
 
 vi.mock('./teaching-settings', () => ({
   TeachingSettings: class {
-    credentials() {
+    credentials(): { model: string; apiKey: string } {
       return { model: 'test-model', apiKey: 'test-key' }
     }
   }
@@ -91,9 +91,7 @@ describe('TeachingService', () => {
     const service = new TeachingService(() => database as never)
 
     const first = service.synthesizeTeachingLesson(lesson)
-    await expect(service.synthesizeTeachingLesson(lesson)).rejects.toThrow(
-      'already running'
-    )
+    await expect(service.synthesizeTeachingLesson(lesson)).rejects.toThrow('already running')
 
     resolveSynthesis?.({ ...lesson, synthesis: 'Completed synthesis' })
     await expect(first).resolves.toMatchObject({ synthesis: 'Completed synthesis' })

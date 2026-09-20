@@ -138,7 +138,7 @@ export class WorkspaceService {
 
   workerDocuments(): SharedWorkerDocument[] {
     const documents = this.sharedWorker.documents()
-    const database = this.database
+    const database = this.lifecycle.activeDatabase()
     if (!database) return documents
     return documents.map((document) => ({
       ...document,
